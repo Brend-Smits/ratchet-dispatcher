@@ -1,10 +1,9 @@
 use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use git2::{BranchType, Cred, PushOptions, RemoteCallbacks, Repository};
+use git2::{Cred, PushOptions, RemoteCallbacks, Repository};
 use log::{debug, error, info};
 use octocrab::{models::pulls::PullRequest, Octocrab};
 use std::fs::{self};
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::{env, process};
@@ -19,6 +18,8 @@ struct Args {
     branch: String,
     #[clap(flatten)]
     verbose: Verbosity,
+    #[clap(long)]
+    github_username: Option<String>,
 }
 
 struct GitHubClient {
@@ -46,9 +47,26 @@ impl GitHubClient {
             .pulls(&self.owner, &self.repo)
             .create("Ratchet Upgrades", branch, "main")
             .body("This PR upgrades the workflows using ratchet.")
+            .maintainer_can_modify(true)
             .send()
             .await?;
         Ok(pr)
+    }
+
+    async fn find_existing_pr(
+        &self,
+        branch: &str,
+    ) -> Result<Option<PullRequest>, Box<dyn std::error::Error>> {
+        let pulls = self
+            .octocrab
+            .pulls(&self.owner, &self.repo)
+            .list()
+            .head(branch)
+            .state(octocrab::params::State::Open)
+            .send()
+            .await?;
+
+        Ok(pulls.items.into_iter().next())
     }
 }
 
@@ -93,14 +111,24 @@ impl GitRepository {
         Ok(())
     }
 
-    fn push_changes(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn push_changes(
+        &self,
+        branch: &str,
+        force: bool,
+        github_username: Option<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut remote = self.repo.find_remote("origin")?;
-        let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
+        let refspec = if force {
+            format!("+refs/heads/{}:refs/heads/{}", branch, branch)
+        } else {
+            format!("refs/heads/{}:refs/heads/{}", branch, branch)
+        };
 
         let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            //TODO: Fix hardcoded username
-            Cred::userpass_plaintext("brend-smits", &env::var("GITHUB_TOKEN").unwrap())
+        callbacks.credentials(|_url, _username_from_url, _allowed_types| {
+            let username = github_username.as_deref().unwrap_or("brend-smits");
+            let token = env::var("GITHUB_TOKEN").unwrap_or_else(|_| String::from("default_token"));
+            Cred::userpass_plaintext(username, &token)
         });
 
         let mut push_options = PushOptions::new();
@@ -111,83 +139,78 @@ impl GitRepository {
     }
 
     fn checkout_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let obj = self
-            .repo
-            .revparse_single(&format!("refs/heads/{}", branch))?;
+        let obj = match self.repo.revparse_single(&format!("refs/heads/{}", branch)) {
+            Ok(obj) => obj,
+            Err(_) => {
+                self.create_branch(branch)?;
+                self.repo
+                    .revparse_single(&format!("refs/heads/{}", branch))?
+            }
+        };
         self.repo.checkout_tree(&obj, None)?;
         self.repo.set_head(&format!("refs/heads/{}", branch))?;
         Ok(())
     }
 }
 
-fn set_permissions(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let metadata = fs::metadata(path)?;
-    let mut permissions = metadata.permissions();
-    permissions.set_mode(0o755); // rwx for owner, rx for group and others
-    fs::set_permissions(path, permissions).map(|_| {
-        debug!("Successfully set permissions for {}", path.display());
-    })?;
-    Ok(())
-}
-
 fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     info!("Upgrading workflows in {}", local_path);
     let workflows_path = format!("{}/.github/workflows", local_path);
-    if Path::new(&workflows_path).exists() {
-        debug!("Found workflows directory at {}", workflows_path);
-        for entry in fs::read_dir(&workflows_path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                debug!("Setting permissions for workflow: {:?}", local_path);
-                set_permissions(Path::new(local_path))?;
-                debug!("Upgrading workflow: {}", path.display());
-                let mut cmd = Command::new("ratchet");
-                cmd.arg("pin").arg(path.to_str().unwrap());
-                debug!("Running command: {:?}", cmd);
-                let output = cmd
-                    .output()
-                    .map_err(|e| {
-                        error!("Failed to run ratchet: {}, removing directory", e);
-                        // Remove the entire directory if ratchet fails
-                        fs::remove_dir_all(local_path)
-                            .map(|_| {
-                                debug!("Removed directory: {}", local_path);
-                            })
-                            .expect("Failed to clean up tmp repository directory");
-                    })
-                    .expect("Failed to execute ratchet");
-
-                debug!("Ratchet output: {:?}", output);
-                if !output.status.success() {
-                    error!(
-                        "ratchet upgrade failed for {}: {}",
-                        path.display(),
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    // Remove the entire directory if ratchet fails
-                    fs::remove_dir_all(local_path)
-                        .map(|_| {
-                            debug!("Removed directory: {}", local_path);
-                        })
-                        .expect("Failed to clean up tmp repository directory");
-                    return Err(Box::from("ratchet upgrade command failed"));
-                } else {
-                    info!(
-                        "Successfully upgraded workflow: {}",
-                        path.file_name().unwrap().to_str().unwrap()
-                    );
-                }
-            }
-        }
-    } else {
+    if !Path::new(&workflows_path).exists() {
         error!("No workflows directory found at {}", workflows_path);
         return Err(Box::from("Workflows directory not found"));
     }
+
+    debug!("Found workflows directory at {}", workflows_path);
+    for entry in fs::read_dir(&workflows_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Err(e) = upgrade_single_workflow(&path, local_path) {
+                error!("Failed to upgrade workflow: {}", e);
+                cleanup(local_path);
+                return Err(e);
+            }
+        }
+    }
+
     Ok(())
 }
 
-// Load environment variables
+fn upgrade_single_workflow(
+    path: &Path,
+    local_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    debug!("Upgrading workflow: {}", path.display());
+
+    let mut cmd = Command::new("ratchet");
+    cmd.arg("pin").arg(path.to_str().unwrap());
+    debug!("Running command: {:?}", cmd);
+
+    let output = cmd.output().map_err(|e| {
+        error!("Failed to run ratchet: {}", e);
+        cleanup(local_path);
+        e
+    })?;
+
+    debug!("Ratchet output: {:?}", output);
+    if !output.status.success() {
+        error!(
+            "ratchet upgrade failed for {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        cleanup(local_path);
+        return Err(Box::from("ratchet upgrade command failed"));
+    }
+
+    info!(
+        "Successfully upgraded workflow: {:?}",
+        path.file_name().unwrap().to_str()
+    );
+    Ok(())
+}
+
 fn load_env_vars() -> String {
     dotenv::dotenv().ok();
     match env::var("GITHUB_TOKEN") {
@@ -196,6 +219,14 @@ fn load_env_vars() -> String {
             eprintln!("GITHUB_TOKEN environment variable is not set");
             process::exit(1);
         }
+    }
+}
+
+fn cleanup(local_path: &str) {
+    if fs::remove_dir_all(local_path).is_ok() {
+        debug!("Cleaned up temporary directory: {}", local_path);
+    } else {
+        error!("Failed to clean up temporary directory: {}", local_path);
     }
 }
 
@@ -211,43 +242,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repo_url = format!("https://github.com/{}/{}.git", args.owner, args.repo);
     let local_path = format!("temp_clones/{}_{}", args.owner, args.repo);
 
-    let git_repo = GitRepository::clone_repo(&repo_url, &local_path)?;
+    let git_repo = match GitRepository::clone_repo(&repo_url, &local_path) {
+        Ok(repo) => repo,
+        Err(e) => {
+            error!("Failed to clone repository: {}", e);
+            process::exit(1);
+        }
+    };
 
-    // Check if the branch exists and create it if it doesn't
-    if git_repo
-        .repo
-        .revparse_single(&format!("refs/heads/{}", args.branch))
-        .is_err()
-    {
+    if git_repo.checkout_branch(&args.branch).is_err() {
         git_repo.create_branch(&args.branch)?;
     }
 
-    git_repo.checkout_branch(&args.branch)?;
-
-    //TODO: In any case, we should clean up the temp directory. This should be done in a finally block
     if let Err(e) = upgrade_workflows(&local_path) {
         error!("Failed to upgrade workflows: {}", e);
+        cleanup(&local_path);
         process::exit(1);
     }
 
     if let Err(e) = git_repo.commit_changes("Upgrade workflows with ratchet") {
         error!("Failed to commit changes: {}", e);
+        cleanup(&local_path);
         process::exit(1);
     }
 
-    if let Err(e) = git_repo.push_changes(&args.branch) {
-        error!("Failed to push changes: {}", e);
-        process::exit(1);
-    }
-
-    let github_client = GitHubClient::new(args.owner, args.repo, token);
-    match github_client.create_pull_request(&args.branch).await {
-        Ok(pr) => println!("Created PR: {:?}", pr.html_url),
+    let github_client = GitHubClient::new(args.owner.clone(), args.repo.clone(), token);
+    let force_push = match github_client.find_existing_pr(&args.branch).await {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
         Err(e) => {
-            error!("Failed to create PR: {}", e);
+            error!("Failed to check existing PR: {}", e);
+            cleanup(&local_path);
             process::exit(1);
         }
+    };
+
+    if let Err(e) = git_repo.push_changes(&args.branch, force_push, args.github_username) {
+        error!("Failed to push changes: {}", e);
+        cleanup(&local_path);
+        process::exit(1);
     }
 
+    if !force_push {
+        match github_client.create_pull_request(&args.branch).await {
+            Ok(pr) => println!("Created PR: {:?}", pr.html_url),
+            Err(e) => {
+                error!("Failed to create PR: {}", e);
+                cleanup(&local_path);
+                process::exit(1);
+            }
+        }
+    } else {
+        info!("Updated existing PR with new changes");
+    }
+
+    cleanup(&local_path);
     Ok(())
 }
