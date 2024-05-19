@@ -6,16 +6,18 @@ use octocrab::{models::pulls::PullRequest, Octocrab};
 use std::fs::{self};
 use std::path::Path;
 use std::process::Command;
-use std::{default, env, process};
+use std::{env, process};
 
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long)]
     repos: String,
-    #[clap(long)]
+    #[clap(long, default_value = "automated-ratchet-dispatcher-pin")]
     branch: String,
     #[clap(flatten)]
     verbose: Verbosity,
+    #[clap(long, default_value = "temp_clones")]
+    clone_dir: String,
 }
 
 struct GitHubClient {
@@ -39,10 +41,11 @@ impl GitHubClient {
         branch: &str,
         default_branch: String,
     ) -> Result<PullRequest, Box<dyn std::error::Error>> {
+        //TODO: Allow the user to customize the PR title and body, would be nice if they can specify a markdown file that we can import
         let pr = self
             .octocrab
             .pulls(&self.owner, &self.repo)
-            .create("ci: Pin versions of actions", branch, default_branch)
+            .create("ci: pin versions of actions", branch, default_branch)
             .body("This automatically generated pull request upgrades the workflows using ratchet. It pins the versions of the actions used in the workflows to prevent bad actors from overwriting tags/versions. Please review the changes and merge if everything looks good.")
             .maintainer_can_modify(true)
             .send()
@@ -246,7 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let owner = repo_parts[0];
         let repo_name = repo_parts[1];
         let repo_url = format!("https://github.com/{}/{}.git", owner, repo_name);
-        let local_path = format!("temp_clones/{}_{}", owner, repo_name);
+        let local_path = format!("{}/{}_{}", args.clone_dir, owner, repo_name);
         let github_client =
             GitHubClient::new(owner.to_string(), repo_name.to_string(), token.clone());
         let default_branch = match github_client.get_default_branch().await {
@@ -265,7 +268,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        //TODO: Randomly generate the branch name if it is not provided
         if git_repo.checkout_branch(&args.branch).is_err() {
             if let Err(e) = git_repo.create_branch(&args.branch) {
                 error!("Failed to create branch: {}", e);
