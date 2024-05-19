@@ -11,9 +11,7 @@ use std::{env, process};
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long)]
-    owner: String,
-    #[clap(long)]
-    repo: String,
+    repos: String,
     #[clap(long)]
     branch: String,
     #[clap(flatten)]
@@ -239,63 +237,91 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .format_target(false)
         .init();
     let token = load_env_vars();
-    let repo_url = format!("https://github.com/{}/{}.git", args.owner, args.repo);
-    let local_path = format!("temp_clones/{}_{}", args.owner, args.repo);
+    let repos: Vec<&str> = args.repos.split(',').collect();
 
-    let git_repo = match GitRepository::clone_repo(&repo_url, &local_path) {
-        Ok(repo) => repo,
-        Err(e) => {
-            error!("Failed to clone repository: {}", e);
-            process::exit(1);
+    for repo in repos {
+        let repo_parts: Vec<&str> = repo.split('/').collect();
+        if repo_parts.len() != 2 {
+            error!("Invalid repository format: {}", repo);
+            continue;
         }
-    };
+        let owner = repo_parts[0];
+        let repo_name = repo_parts[1];
+        let repo_url = format!("https://github.com/{}/{}.git", owner, repo_name);
+        let local_path = format!("temp_clones/{}_{}", owner, repo_name);
 
-    if git_repo.checkout_branch(&args.branch).is_err() {
-        git_repo.create_branch(&args.branch)?;
-    }
-
-    if let Err(e) = upgrade_workflows(&local_path) {
-        error!("Failed to upgrade workflows: {}", e);
-        cleanup(&local_path);
-        process::exit(1);
-    }
-
-    if let Err(e) = git_repo.commit_changes("Upgrade workflows with ratchet") {
-        error!("Failed to commit changes: {}", e);
-        cleanup(&local_path);
-        process::exit(1);
-    }
-
-    let github_client = GitHubClient::new(args.owner.clone(), args.repo.clone(), token);
-    let force_push = match github_client.find_existing_pr(&args.branch).await {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(e) => {
-            error!("Failed to check existing PR: {}", e);
-            cleanup(&local_path);
-            process::exit(1);
-        }
-    };
-
-    if let Err(e) = git_repo.push_changes(&args.branch, force_push, args.github_username) {
-        error!("Failed to push changes: {}", e);
-        cleanup(&local_path);
-        process::exit(1);
-    }
-
-    if !force_push {
-        match github_client.create_pull_request(&args.branch).await {
-            Ok(pr) => println!("Created PR: {:?}", pr.html_url),
+        let git_repo = match GitRepository::clone_repo(&repo_url, &local_path) {
+            Ok(repo) => repo,
             Err(e) => {
-                error!("Failed to create PR: {}", e);
+                error!("Failed to clone repository: {}", e);
+                continue;
+            }
+        };
+
+        if git_repo.checkout_branch(&args.branch).is_err() {
+            if let Err(e) = git_repo.create_branch(&args.branch) {
+                error!("Failed to create branch: {}", e);
                 cleanup(&local_path);
-                process::exit(1);
+                continue;
             }
         }
-    } else {
-        info!("Updated existing PR with new changes");
+
+        if let Err(e) = upgrade_workflows(&local_path) {
+            error!("Failed to upgrade workflows: {}", e);
+            cleanup(&local_path);
+            continue;
+        }
+
+        if let Err(e) = git_repo.commit_changes("Upgrade workflows with ratchet") {
+            error!("Failed to commit changes: {}", e);
+            cleanup(&local_path);
+            continue;
+        }
+
+        let github_client =
+            GitHubClient::new(owner.to_string(), repo_name.to_string(), token.clone());
+        let force_push = match github_client.find_existing_pr(&args.branch).await {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                error!("Failed to check existing PR: {}", e);
+                cleanup(&local_path);
+                continue;
+            }
+        };
+
+        if let Err(e) =
+            git_repo.push_changes(&args.branch, force_push, args.github_username.clone())
+        {
+            error!("Failed to push changes: {}", e);
+            cleanup(&local_path);
+            continue;
+        }
+
+        if !force_push {
+            match github_client.create_pull_request(&args.branch).await {
+                Ok(pr) => info!(
+                    "Created PR for {}: {:?}",
+                    repo,
+                    format!(
+                        "{}://{}/{}",
+                        pr.html_url.clone().unwrap().scheme().to_string(),
+                        pr.html_url.clone().unwrap().domain().unwrap().to_string(),
+                        pr.html_url.unwrap().path().to_string()
+                    )
+                ),
+                Err(e) => {
+                    error!("Failed to create PR: {}", e);
+                    cleanup(&local_path);
+                    continue;
+                }
+            }
+        } else {
+            info!("Updated existing PR with new changes for {}", repo);
+        }
+
+        cleanup(&local_path);
     }
 
-    cleanup(&local_path);
     Ok(())
 }
