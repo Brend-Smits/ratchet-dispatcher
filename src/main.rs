@@ -16,8 +16,6 @@ struct Args {
     branch: String,
     #[clap(flatten)]
     verbose: Verbosity,
-    #[clap(long)]
-    github_username: Option<String>,
 }
 
 struct GitHubClient {
@@ -43,8 +41,8 @@ impl GitHubClient {
         let pr = self
             .octocrab
             .pulls(&self.owner, &self.repo)
-            .create("Ratchet Upgrades", branch, "main")
-            .body("This PR upgrades the workflows using ratchet.")
+            .create("ci: Pin versions of actions", branch, "main")
+            .body("This automatically generated pull request upgrades the workflows using ratchet. It pins the versions of the actions used in the workflows to prevent bad actors from overwriting tags/versions. Please review the changes and merge if everything looks good.")
             .maintainer_can_modify(true)
             .send()
             .await?;
@@ -109,12 +107,7 @@ impl GitRepository {
         Ok(())
     }
 
-    fn push_changes(
-        &self,
-        branch: &str,
-        force: bool,
-        github_username: Option<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn push_changes(&self, branch: &str, force: bool) -> Result<(), Box<dyn std::error::Error>> {
         let mut remote = self.repo.find_remote("origin")?;
         let refspec = if force {
             format!("+refs/heads/{}:refs/heads/{}", branch, branch)
@@ -124,9 +117,8 @@ impl GitRepository {
 
         let mut callbacks = RemoteCallbacks::new();
         callbacks.credentials(|_url, _username_from_url, _allowed_types| {
-            let username = github_username.as_deref().unwrap_or("brend-smits");
             let token = env::var("GITHUB_TOKEN").unwrap_or_else(|_| String::from("default_token"));
-            Cred::userpass_plaintext(username, &token)
+            Cred::userpass_plaintext("x-access-token", &token)
         });
 
         let mut push_options = PushOptions::new();
@@ -272,7 +264,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        if let Err(e) = git_repo.commit_changes("Upgrade workflows with ratchet") {
+        if let Err(e) = git_repo.commit_changes("ci: pin versions of workflow actions") {
             error!("Failed to commit changes: {}", e);
             cleanup(&local_path);
             continue;
@@ -290,9 +282,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        if let Err(e) =
-            git_repo.push_changes(&args.branch, force_push, args.github_username.clone())
-        {
+        if let Err(e) = git_repo.push_changes(&args.branch, force_push) {
             error!("Failed to push changes: {}", e);
             cleanup(&local_path);
             continue;
