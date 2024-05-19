@@ -6,7 +6,7 @@ use octocrab::{models::pulls::PullRequest, Octocrab};
 use std::fs::{self};
 use std::path::Path;
 use std::process::Command;
-use std::{env, process};
+use std::{default, env, process};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -37,11 +37,12 @@ impl GitHubClient {
     async fn create_pull_request(
         &self,
         branch: &str,
+        default_branch: String,
     ) -> Result<PullRequest, Box<dyn std::error::Error>> {
         let pr = self
             .octocrab
             .pulls(&self.owner, &self.repo)
-            .create("ci: Pin versions of actions", branch, "main")
+            .create("ci: Pin versions of actions", branch, default_branch)
             .body("This automatically generated pull request upgrades the workflows using ratchet. It pins the versions of the actions used in the workflows to prevent bad actors from overwriting tags/versions. Please review the changes and merge if everything looks good.")
             .maintainer_can_modify(true)
             .send()
@@ -63,6 +64,11 @@ impl GitHubClient {
             .await?;
 
         Ok(pulls.items.into_iter().next())
+    }
+
+    async fn get_default_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let repo = self.octocrab.repos(&self.owner, &self.repo).get().await?;
+        Ok(repo.default_branch.unwrap_or_else(|| "main".to_string()))
     }
 }
 
@@ -241,6 +247,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let repo_name = repo_parts[1];
         let repo_url = format!("https://github.com/{}/{}.git", owner, repo_name);
         let local_path = format!("temp_clones/{}_{}", owner, repo_name);
+        let github_client =
+            GitHubClient::new(owner.to_string(), repo_name.to_string(), token.clone());
+        let default_branch = match github_client.get_default_branch().await {
+            Ok(branch) => branch,
+            Err(e) => {
+                error!("Failed to get default branch: {}", e);
+                continue;
+            }
+        };
 
         let git_repo = match GitRepository::clone_repo(&repo_url, &local_path) {
             Ok(repo) => repo,
@@ -270,8 +285,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let github_client =
-            GitHubClient::new(owner.to_string(), repo_name.to_string(), token.clone());
         let force_push = match github_client.find_existing_pr(&args.branch).await {
             Ok(Some(_)) => true,
             Ok(None) => false,
@@ -289,7 +302,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if !force_push {
-            match github_client.create_pull_request(&args.branch).await {
+            match github_client
+                .create_pull_request(&args.branch, default_branch)
+                .await
+            {
                 Ok(pr) => info!(
                     "Created PR for {}: {:?}",
                     repo,
