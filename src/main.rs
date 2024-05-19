@@ -265,6 +265,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
+        //TODO: Randomly generate the branch name if it is not provided
         if git_repo.checkout_branch(&args.branch).is_err() {
             if let Err(e) = git_repo.create_branch(&args.branch) {
                 error!("Failed to create branch: {}", e);
