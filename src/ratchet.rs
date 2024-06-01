@@ -66,26 +66,28 @@ fn run_ratchet_command(path: &Path) -> Result<std::process::Output, Box<dyn std:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::Path};
+    use std::{fs::{self, File}, io::Write};
 
     use assert_cmd::Command;
     use mockall::predicate::*;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
     const UNPINNED_WORKFLOW: &str = include_str!("../resources/ci_unpinned.yml");
     const PINNED_WORKFLOW: &str = include_str!("../resources/ci_pinned.yml");
 
     #[test]
     fn test_upgrade_workflows_success() {
-        let dir = tempdir().unwrap();
-        let workflow_dir = dir.path().join(".github/workflows");
+        env_logger::init();
+        let tmp_dir = TempDir::new().unwrap();
+
+        let workflow_dir = tmp_dir.path().join(".github/workflows");
         fs::create_dir_all(&workflow_dir).unwrap();
 
         let workflow_path = workflow_dir.join("ci.yml");
-        fs::write(&workflow_path, UNPINNED_WORKFLOW).unwrap();
+        let mut f = File::create(workflow_path.clone()).unwrap();
+        f.write_all(UNPINNED_WORKFLOW.as_bytes()).unwrap();
 
-        let result = upgrade_workflows(dir.path().to_str().unwrap());
-        // assert!(result.is_ok());
+        let result = upgrade_workflows(tmp_dir.path().to_str().unwrap());
 
         let upgraded_content = fs::read_to_string(&workflow_path).unwrap();
         assert_eq!(upgraded_content, PINNED_WORKFLOW);
@@ -101,10 +103,12 @@ mod tests {
 
     #[test]
     fn test_upgrade_single_workflow_success() {
+        env_logger::init();
         let dir = tempdir().unwrap();
         let workflow_path = dir.path().join("ci.yml");
         fs::write(&workflow_path, UNPINNED_WORKFLOW).unwrap();
-
+        error!("Temporary directory created at: {}", dir.path().display());
+        error!("Workflow path: {}", workflow_path.display());
         let result = upgrade_single_workflow(&workflow_path, dir.path().to_str().unwrap());
         assert!(result.is_ok());
 
@@ -114,6 +118,7 @@ mod tests {
 
     #[test]
     fn test_upgrade_single_workflow_failure() {
+        env_logger::init();
         let dir = tempdir().unwrap();
         let workflow_path = dir.path().join("ci.yml");
         fs::write(&workflow_path, UNPINNED_WORKFLOW).unwrap();

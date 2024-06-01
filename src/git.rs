@@ -1,6 +1,6 @@
 use std::env;
 
-use git2::{Cred, PushOptions, RemoteCallbacks, Repository};
+use git2::{ApplyOptions, Cred, DiffOptions, PushOptions, RemoteCallbacks, Repository};
 use log::info;
 
 pub struct GitRepository {
@@ -8,6 +8,10 @@ pub struct GitRepository {
 }
 
 impl GitRepository {
+    // Function that will do the following command:
+    // git clone <repo_url> <local_path>
+    // This will clone the repository from <repo_url> to <local_path>
+    // Local path is usually a temporary directory.
     pub fn clone_repo(
         repo_url: &str,
         local_path: &str,
@@ -17,6 +21,9 @@ impl GitRepository {
         Ok(GitRepository { repo })
     }
 
+    // Function that will do the following command:
+    // git branch <branch> <commit>
+    // This will create a new branch with the name <branch>
     pub fn create_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
         let head = self.repo.head()?;
         let commit = head.peel_to_commit()?;
@@ -24,6 +31,35 @@ impl GitRepository {
         Ok(())
     }
 
+    // Function that will do the following command:
+    // git diff -U0 -w --no-color --ignore-blank-lines | git apply --cached --ignore-whitespace --unidiff-zero -
+    // This will essentially remove only the blank line changes from the changes
+    // This is a hack as we don't like it that Ratchet 'cleans' up the workflow files.
+    // Ratchet by default removes the blank lines after a workflow step.
+    // This is not something we want to do as it makes the workflow files harder to read.
+    pub fn remove_blank_line_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut diff_options = DiffOptions::new();
+        diff_options
+            .ignore_whitespace(true)
+            .ignore_blank_lines(true)
+            .context_lines(0);
+
+        let diff = self
+            .repo
+            .diff_index_to_workdir(None, Some(&mut diff_options))?;
+
+        let mut apply_options = ApplyOptions::new();
+        apply_options.hunk_callback(|_hunk| true);
+        self.repo
+            .apply(&diff, git2::ApplyLocation::Index, Some(&mut apply_options))?;
+
+        Ok(())
+    }
+
+    // Function that will do the following command:
+    // git add .github/workflows/*
+    // git commit -m "ci: pin versions of workflow actions"
+    // This will add all the changes in the .github/workflows directory and commit them with the message "ci: pin versions of workflow actions"
     pub fn commit_changes(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut index = self.repo.index()?;
         index.add_all(
@@ -47,6 +83,9 @@ impl GitRepository {
         Ok(())
     }
 
+    // Function that will do the following command:
+    // git push origin <branch>
+    // This will push the changes to the remote repository
     pub fn push_changes(
         &self,
         branch: &str,
@@ -73,6 +112,10 @@ impl GitRepository {
         Ok(())
     }
 
+    // Function that will do the following command:
+    // git rev-parse --verify refs/heads/<branch>
+    // If the branch does not exist it will create the branch
+    // If the branch exists it will checkout the branch
     pub fn checkout_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
         let obj = match self.repo.revparse_single(&format!("refs/heads/{}", branch)) {
             Ok(obj) => obj,

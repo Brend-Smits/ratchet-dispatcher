@@ -116,6 +116,12 @@ async fn process_single_repository(
         return Err(e);
     }
 
+    // Remove blank line changes from the changes
+    if let Err(e) = git_repo.remove_blank_line_changes() {
+        error!("Failed to remove blank line changes: {}", e);
+        return Err(e);
+    }
+
     if let Err(e) = git_repo.commit_changes("ci: pin versions of workflow actions") {
         error!("Failed to commit changes: {}", e);
         return Err(e);

@@ -2,6 +2,7 @@ use std::fs;
 
 use log::{debug, error};
 
+// Function that will remove the temporary directory
 pub fn cleanup_clone_dir(local_path: &str) {
     if fs::remove_dir_all(local_path).is_ok() {
         debug!("Cleaned up temporary directory: {}", local_path);
