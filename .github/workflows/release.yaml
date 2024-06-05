@@ -1,0 +1,107 @@
+name: Docker Publish & Attach binaries, sbom and provenance to releases
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+*
+jobs:
+  docker-publish:
+    runs-on: ubuntu-24.04
+    permissions:
+        id-token: write
+        packages: write
+        contents: write
+        attestations: write
+    env:
+        REGISTRY: ghcr.io
+        IMAGE: ${{ github.repository }}
+        APP_NAME: ratchet-dispatcher
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: docker/setup-buildx-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=semver,pattern=v{{major}}
+            type=sha
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        id: build_and_push
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64,linux/arm64/v8
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v1
+        id: attest
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.build_and_push.outputs.digest }}
+          push-to-registry: true
+  attach:
+    name: Attach binaries, sbom and provenance to releases
+    runs-on: ubuntu-24.04
+    permissions:
+        id-token: write
+        packages: write
+        contents: write
+        attestations: write
+    container: rust:1.76
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@04733e069f2d7f7f0b4aebc4fbdbce8613b03ccd # v2.9.0
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/ratchet-dispatcher
+          tag: ${{ github.ref }}
+          overwrite: true
+          asset_name: ratchet-dispatcher
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'target/release/ratchet-dispatcher'
+      - name: Upload provenance to release
+        uses: svenstaro/upload-release-action@04733e069f2d7f7f0b4aebc4fbdbce8613b03ccd # v2.9.0
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.attest.outputs.bundle-path }}
+          tag: ${{ github.ref }}
+          overwrite: true
+          asset_name: provenance.json
+      - uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.15.11
+        with:
+          artifact-name: sbom.spdx.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish SBOM assets
+        uses: anchore/sbom-action/publish-sbom@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.15.11
+        with:
+          sbom-artifact-match: ".*\\.spdx\\.json$"
+          github-token: ${{ secrets.GITHUB_TOKEN }}

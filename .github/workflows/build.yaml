@@ -1,0 +1,39 @@
+name: Rust CI
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: rust:1.76
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+      - name: Set workspace
+        run: |
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          echo "workspace=${GITHUB_WORKSPACE}" >> $GITHUB_ENV
+      - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: |
+            ${{ env.workspace }}/.cargo/bin/
+            ${{ env.workspace }}/.cargo/registry/index/
+            ${{ env.workspace }}/.cargo/registry/cache/
+            ${{ env.workspace }}/.cargo/git/db/
+            ${{ env.workspace }}/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Add rustfmt/clippy
+        run: | 
+          rustup component add rustfmt
+          rustup component add clippy
+      - name: Run Cargo build
+        run: cargo build --profile release
+      - name: Run Cargo test
+        run: cargo test
+      - name: Run Cargo fmt
+        run: cargo fmt --all -- --check
+      - name: Run Cargo clippy
+        run: cargo clippy -- -D warnings
