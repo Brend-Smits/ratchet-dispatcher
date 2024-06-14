@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.0...v1.2.1) (2024-06-14)
+
+
+### Bug Fixes
+
+* release assets did not get added properly in some tags ([397c6d7](https://github.com/Brend-Smits/ratchet-dispatcher/commit/397c6d74a7050e20529abac145282a1a1486ca4e))
+
 ## [1.2.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.1.0...v1.2.0) (2024-06-14)
 
 
