@@ -17,7 +17,22 @@ impl GitRepository {
         local_path: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Cloning repository from {} to {}", repo_url, local_path);
-        let repo = Repository::clone(repo_url, local_path)?;
+
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(|_url, _username_from_url, _allowed_types| {
+            let token = env::var("GITHUB_TOKEN").unwrap_or_else(|_| String::from("default_token"));
+            Cred::userpass_plaintext("x-access-token", &token)
+        });
+
+        let mut fetch_options = git2::FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        // Prepare builder
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fetch_options);
+
+        let repo = builder.clone(repo_url, std::path::Path::new(local_path))?;
+
         Ok(GitRepository { repo })
     }
 

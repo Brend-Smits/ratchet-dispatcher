@@ -14,15 +14,19 @@ It is considered a best practice to pin the version of the actions used in a wor
 ## Usage
 
 ```bash
-ratchet-dispatcher --repos <comma separated list of repositories(org/repo format)> --branch <branch> --token <github token>
+ratchet-dispatcher --repos <comma separated list of repositories(org/repo format)> --branch <branch>
 ```
+
+`--branch` is optional and defaults to `automated-ratchet-dispatcher-pin`.
+
+*To authenticate with GitHub, you need to set the `GITHUB_TOKEN` environment variable.*
 
 ## Example
 
 You can also provide the token via an environment variable.
 
 ```bash
-ratchet-dispatcher --repos "org/repo1,org/repo2" --branch main-ratchet-target --token <github token>
+GITHUB_TOKEN=token-here ratchet-dispatcher --repos "org/repo1,org/repo2" --branch main-ratchet-target
 ```
 
 ### Example output
