@@ -26,7 +26,7 @@ jobs:
             ${{ env.workspace }}/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Add rustfmt/clippy
-        run: | 
+        run: |
           rustup component add rustfmt
           rustup component add clippy
       - name: Run Cargo build
