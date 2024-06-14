@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.1.0...v1.2.0) (2024-06-14)
+
+
+### Features
+
+* build ratchet from source so it's included in the docker image ([92ca664](https://github.com/Brend-Smits/ratchet-dispatcher/commit/92ca664b02324e71684779715a9f1159b3e106ab))
+
 ## [1.1.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.0.0...v1.1.0) (2024-06-05)
 
 
