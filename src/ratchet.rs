@@ -2,9 +2,7 @@ use std::{fs, path::Path, process::Command};
 
 use log::{debug, error, info};
 
-use crate::cleanup_clone_dir;
-
-pub fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     info!("Upgrading workflows in {}", local_path);
     let workflows_path = format!("{}/.github/workflows", local_path);
     if !Path::new(&workflows_path).exists() {
@@ -17,11 +15,8 @@ pub fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::error::Err
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
-            if let Err(e) = upgrade_single_workflow(&path, local_path) {
-                error!("Failed to upgrade workflow: {}", e);
-                cleanup_clone_dir(local_path);
-                return Err(e);
-            }
+            // Instead of returning an error, we continue
+            let _ = upgrade_single_workflow(&path);
         }
     }
 
@@ -30,7 +25,6 @@ pub fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::error::Err
 
 pub fn upgrade_single_workflow(
     path: &Path,
-    local_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     debug!("Upgrading workflow: {}", path.display());
 
@@ -43,14 +37,14 @@ pub fn upgrade_single_workflow(
             path.display(),
             String::from_utf8_lossy(&output.stderr)
         );
-        cleanup_clone_dir(local_path);
-        return Err(Box::from("ratchet upgrade command failed"));
+        return Err(Box::from(format!("ratchet upgrade command for path {} failed", path.display())));
     }
 
     info!(
         "Successfully upgraded workflow: {:?}",
         path.file_name().unwrap().to_str()
     );
+        
     Ok(())
 }
 
@@ -96,11 +90,11 @@ mod tests {
     //     assert_eq!(upgraded_content, PINNED_WORKFLOW);
     // }
 
-    #[test]
-    fn test_upgrade_workflows_missing_directory() {
+    #[tokio::test]
+    async fn test_upgrade_workflows_missing_directory() {
         let dir = tempdir().unwrap();
 
-        let result = upgrade_workflows(dir.path().to_str().unwrap());
+        let result = upgrade_workflows(dir.path().to_str().unwrap()).await;
         assert!(result.is_err());
     }
 

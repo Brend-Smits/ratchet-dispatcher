@@ -71,6 +71,27 @@ impl GitRepository {
         Ok(())
     }
 
+    // Function that will stage all the changes in the .github/workflows directory ignoring whitespace and blank line changes
+    pub fn stage_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut diff_options = DiffOptions::new();
+        diff_options
+            .ignore_whitespace(true)
+            .ignore_blank_lines(true)
+            .pathspec(".github/workflows")
+            .pathspec(".github/workflows/*");
+    
+        let diff = self
+            .repo
+            .diff_index_to_workdir(None, Some(&mut diff_options))?;
+    
+        let mut apply_options = ApplyOptions::new();
+        apply_options.hunk_callback(|_hunk| true);
+        self.repo
+            .apply(&diff, git2::ApplyLocation::Index, Some(&mut apply_options))?;
+    
+        Ok(())
+    }
+
     // Function that will do the following command:
     // git add .github/workflows/*
     // git commit -m "ci: pin versions of workflow actions"

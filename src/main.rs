@@ -111,7 +111,7 @@ async fn process_single_repository(
         }
     }
 
-    if let Err(e) = upgrade_workflows(local_path) {
+    if let Err(e) = upgrade_workflows(local_path).await {
         error!("Failed to upgrade workflows: {}", e);
         return Err(e);
     }
@@ -119,7 +119,7 @@ async fn process_single_repository(
     // Remove blank line changes from the changes
     if let Err(e) = git_repo.remove_blank_line_changes() {
         error!("Failed to remove blank line changes: {}", e);
-        return Err(e);
+        git_repo.stage_changes()?;
     }
 
     if let Err(e) = git_repo.commit_changes("ci: pin versions of workflow actions") {
@@ -136,8 +136,8 @@ async fn process_single_repository(
         }
     };
 
-    if let Err(e) = git_repo.push_changes(&args.branch, force_push) {
-        error!("Failed to push changes: {}", e);
+    if let Err(e) = git_repo.push_changes(&args.branch, true) {
+        error!("Failed to push changes to branch {}: {}", &args.branch, e);
         return Err(e);
     }
 
