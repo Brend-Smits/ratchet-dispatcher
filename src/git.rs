@@ -79,16 +79,16 @@ impl GitRepository {
             .ignore_blank_lines(true)
             .pathspec(".github/workflows")
             .pathspec(".github/workflows/*");
-    
+
         let diff = self
             .repo
             .diff_index_to_workdir(None, Some(&mut diff_options))?;
-    
+
         let mut apply_options = ApplyOptions::new();
         apply_options.hunk_callback(|_hunk| true);
         self.repo
             .apply(&diff, git2::ApplyLocation::Index, Some(&mut apply_options))?;
-    
+
         Ok(())
     }
 
