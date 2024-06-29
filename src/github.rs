@@ -47,7 +47,7 @@ impl GitHubClient {
             .octocrab
             .pulls(&self.owner, &self.repo)
             .list()
-            .head(branch)
+            .head(format!("{}:{}",&self.owner, branch))
             .state(octocrab::params::State::Open)
             .send()
             .await?;
