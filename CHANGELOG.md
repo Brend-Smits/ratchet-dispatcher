@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.2...v1.2.3) (2024-06-29)
+
+
+### Bug Fixes
+
+* continue if there are errors ([9518596](https://github.com/Brend-Smits/ratchet-dispatcher/commit/9518596d5f4e48528d97148d97c98f5046429454))
+
 ## [1.2.2](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.1...v1.2.2) (2024-06-14)
 
 
