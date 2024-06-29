@@ -23,9 +23,7 @@ pub async fn upgrade_workflows(local_path: &str) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-pub fn upgrade_single_workflow(
-    path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn upgrade_single_workflow(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     debug!("Upgrading workflow: {}", path.display());
 
     let output = run_ratchet_command(path)?;
@@ -37,14 +35,17 @@ pub fn upgrade_single_workflow(
             path.display(),
             String::from_utf8_lossy(&output.stderr)
         );
-        return Err(Box::from(format!("ratchet upgrade command for path {} failed", path.display())));
+        return Err(Box::from(format!(
+            "ratchet upgrade command for path {} failed",
+            path.display()
+        )));
     }
 
     info!(
         "Successfully upgraded workflow: {:?}",
         path.file_name().unwrap().to_str()
     );
-        
+
     Ok(())
 }
 
