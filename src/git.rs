@@ -30,6 +30,7 @@ impl GitRepository {
     pub fn create_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
         let output = Command::new("git")
             .arg("branch")
+            .arg("-f")
             .arg(branch)
             .output()?;
 
