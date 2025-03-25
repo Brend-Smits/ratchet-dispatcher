@@ -63,6 +63,11 @@ impl GitRepository {
     }
 
     pub fn stage_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Output git status
+        let output = Command::new("git")
+            .arg("status")
+            .output()?;
+
         info!("Staging changes");
         let output = Command::new("git")
             .arg("add")
