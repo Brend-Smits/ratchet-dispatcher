@@ -28,6 +28,7 @@ impl GitRepository {
     }
 
     pub fn create_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Creating branch {}", branch);
         let output = Command::new("git")
             .arg("branch")
             .arg("-f")
@@ -45,6 +46,7 @@ impl GitRepository {
     }
 
     pub fn remove_blank_line_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Removing blank line changes");
         let output = Command::new("sh")
             .arg("-c")
             .arg("git diff -U0 -w --no-color --ignore-blank-lines | git apply --cached --ignore-whitespace --unidiff-zero -")
@@ -61,6 +63,7 @@ impl GitRepository {
     }
 
     pub fn stage_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Staging changes");
         let output = Command::new("git")
             .arg("add")
             .arg(".github/workflows/*")
@@ -77,6 +80,7 @@ impl GitRepository {
     }
 
     pub fn commit_changes(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Committing changes");
         let output = Command::new("git")
             .arg("commit")
             .arg("-m")
@@ -98,6 +102,7 @@ impl GitRepository {
         branch: &str,
         force: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Pushing changes to branch {}", branch);
         let refspec = if force {
             format!("+refs/heads/{}:refs/heads/{}", branch, branch)
         } else {
@@ -121,6 +126,7 @@ impl GitRepository {
     }
 
     pub fn checkout_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Checking out branch {}", branch);
         let output = Command::new("git")
             .arg("checkout")
             .arg(branch)
