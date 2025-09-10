@@ -1,168 +1,346 @@
-use std::env;
-
-use git2::{ApplyOptions, Cred, DiffOptions, PushOptions, RemoteCallbacks, Repository};
-use log::info;
+use std::process::Command;
 
 pub struct GitRepository {
-    repo: Repository,
+    pub working_dir: String,
 }
 
 impl GitRepository {
-    // Function that will do the following command:
-    // git clone <repo_url> <local_path>
-    // This will clone the repository from <repo_url> to <local_path>
-    // Local path is usually a temporary directory.
-    pub fn clone_repo(
-        repo_url: &str,
-        local_path: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        info!("Cloning repository from {} to {}", repo_url, local_path);
-
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_url, _username_from_url, _allowed_types| {
-            let token = env::var("GITHUB_TOKEN").unwrap_or_else(|_| String::from("default_token"));
-            Cred::userpass_plaintext("x-access-token", &token)
-        });
-
-        let mut fetch_options = git2::FetchOptions::new();
-        fetch_options.remote_callbacks(callbacks);
-
-        // Prepare builder
-        let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch_options);
-
-        let repo = builder.clone(repo_url, std::path::Path::new(local_path))?;
-
-        Ok(GitRepository { repo })
+    pub fn open(working_dir: String) -> Result<Self, String> {
+        Ok(GitRepository { working_dir })
     }
 
-    // Function that will do the following command:
-    // git branch <branch> <commit>
-    // This will create a new branch with the name <branch>
-    pub fn create_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
-        self.repo.branch(branch, &commit, false)?;
-        Ok(())
-    }
+    pub fn stage_changes(&self) -> Result<(), String> {
+        // Get list of modified files with 'uses:' changes
+        let modified_files = self.get_files_with_uses_changes()?;
 
-    // Function that will do the following command:
-    // git diff -U0 -w --no-color --ignore-blank-lines | git apply --cached --ignore-whitespace --unidiff-zero -
-    // This will essentially remove only the blank line changes from the changes
-    // This is a hack as we don't like it that Ratchet 'cleans' up the workflow files.
-    // Ratchet by default removes the blank lines after a workflow step.
-    // This is not something we want to do as it makes the workflow files harder to read.
-    pub fn remove_blank_line_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut diff_options = DiffOptions::new();
-        diff_options
-            .ignore_whitespace(true)
-            .ignore_blank_lines(true)
-            .context_lines(0);
+        if modified_files.is_empty() {
+            log::info!("No files with uses: changes found");
+            return Ok(());
+        }
 
-        let diff = self
-            .repo
-            .diff_index_to_workdir(None, Some(&mut diff_options))?;
+        log::info!("Found {} files with uses: changes", modified_files.len());
 
-        let mut apply_options = ApplyOptions::new();
-        apply_options.hunk_callback(|_hunk| true);
-        self.repo
-            .apply(&diff, git2::ApplyLocation::Index, Some(&mut apply_options))?;
+        // Stage only the uses: lines from each file
+        for file in modified_files {
+            self.stage_uses_lines_only(&file)?;
+        }
 
         Ok(())
     }
 
-    // Function that will stage all the changes in the .github/workflows directory ignoring whitespace and blank line changes
-    pub fn stage_changes(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut diff_options = DiffOptions::new();
-        diff_options
-            .ignore_whitespace(true)
-            .ignore_blank_lines(true)
-            .pathspec(".github/workflows")
-            .pathspec(".github/workflows/*");
+    fn stage_uses_lines_only(&self, file: &str) -> Result<(), String> {
+        // Much simpler approach: create a temporary branch and cherry-pick only uses: changes
 
-        let diff = self
-            .repo
-            .diff_index_to_workdir(None, Some(&mut diff_options))?;
+        // First, create a copy of the original file content from HEAD
+        let original_output = Command::new("git")
+            .args(["show", &format!("HEAD:{}", file)])
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to get original file {}: {}", file, e))?;
 
-        let mut apply_options = ApplyOptions::new();
-        apply_options.hunk_callback(|_hunk| true);
-        self.repo
-            .apply(&diff, git2::ApplyLocation::Index, Some(&mut apply_options))?;
+        if !original_output.status.success() {
+            return Err(format!(
+                "Git show failed for {}: {}",
+                file,
+                String::from_utf8_lossy(&original_output.stderr)
+            ));
+        }
 
+        let original_content = String::from_utf8_lossy(&original_output.stdout);
+
+        // Get current file content
+        let current_path = std::path::Path::new(&self.working_dir).join(file);
+        let current_content = std::fs::read_to_string(&current_path)
+            .map_err(|e| format!("Failed to read current file {}: {}", file, e))?;
+
+        // Create a new version with only uses: line changes
+        let uses_only_content =
+            self.create_uses_only_version(&original_content, &current_content)?;
+
+        // Temporarily overwrite the file with the uses-only version
+        std::fs::write(&current_path, &uses_only_content)
+            .map_err(|e| format!("Failed to write uses-only content: {}", e))?;
+
+        // Stage the file
+        let stage_output = Command::new("git")
+            .args(["add", file])
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to stage file: {}", e))?;
+
+        if !stage_output.status.success() {
+            // Restore original content before returning error
+            std::fs::write(&current_path, current_content)
+                .map_err(|e| format!("Failed to restore file after staging error: {}", e))?;
+            return Err(format!(
+                "Failed to stage file {}: {}",
+                file,
+                String::from_utf8_lossy(&stage_output.stderr)
+            ));
+        }
+
+        // Restore the original current content to working directory
+        std::fs::write(&current_path, current_content)
+            .map_err(|e| format!("Failed to restore current file content: {}", e))?;
+
+        log::info!("Staged uses: changes for file: {}", file);
         Ok(())
     }
 
-    // Function that will do the following command:
-    // git add .github/workflows/*
-    // git commit -m "ci: pin versions of workflow actions"
-    // This will add all the changes in the .github/workflows directory and commit them with the message "ci: pin versions of workflow actions"
-    pub fn commit_changes(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let mut index = self.repo.index()?;
-        index.add_all(
-            [".github/workflows/*"].iter(),
-            git2::IndexAddOption::DEFAULT,
-            None,
-        )?;
-        index.write()?;
-        let tree_id = index.write_tree()?;
-        let tree = self.repo.find_tree(tree_id)?;
-        let parent_commit = self.repo.head()?.peel_to_commit()?;
-        let signature = self.repo.signature()?;
-        self.repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            message,
-            &tree,
-            &[&parent_commit],
-        )?;
-        Ok(())
-    }
+    fn create_uses_only_version(&self, original: &str, current: &str) -> Result<String, String> {
+        // Parse both versions to understand YAML structure
+        let original_lines: Vec<&str> = original.lines().collect();
+        let current_lines: Vec<&str> = current.lines().collect();
 
-    // Function that will do the following command:
-    // git push origin <branch>
-    // This will push the changes to the remote repository
-    pub fn push_changes(
-        &self,
-        branch: &str,
-        force: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut remote = self.repo.find_remote("origin")?;
-        let refspec = if force {
-            format!("+refs/heads/{}:refs/heads/{}", branch, branch)
-        } else {
-            format!("refs/heads/{}:refs/heads/{}", branch, branch)
-        };
+        // Find all uses: lines in both versions and their context
+        let original_uses_info = self.extract_uses_context(&original_lines);
+        let current_uses_info = self.extract_uses_context(&current_lines);
 
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_url, _username_from_url, _allowed_types| {
-            //TODO: This should not be here
-            let token = env::var("GITHUB_TOKEN").unwrap_or_else(|_| String::from("default_token"));
-            Cred::userpass_plaintext("x-access-token", &token)
-        });
+        log::debug!("Original uses: lines: {:?}", original_uses_info);
+        log::debug!("Current uses: lines: {:?}", current_uses_info);
 
-        let mut push_options = PushOptions::new();
-        push_options.remote_callbacks(callbacks);
+        // Start with original content as strings to avoid lifetime issues
+        let mut result_lines: Vec<String> = original_lines.iter().map(|s| s.to_string()).collect();
 
-        remote.push(&[&refspec], Some(&mut push_options))?;
-        Ok(())
-    }
-
-    // Function that will do the following command:
-    // git rev-parse --verify refs/heads/<branch>
-    // If the branch does not exist it will create the branch
-    // If the branch exists it will checkout the branch
-    pub fn checkout_branch(&self, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let obj = match self.repo.revparse_single(&format!("refs/heads/{}", branch)) {
-            Ok(obj) => obj,
-            Err(_) => {
-                self.create_branch(branch)?;
-                self.repo
-                    .revparse_single(&format!("refs/heads/{}", branch))?
+        // Update all uses: lines that have changed by exact position matching
+        for (current_idx, (current_line_num, current_uses_line)) in
+            current_uses_info.iter().enumerate()
+        {
+            if let Some((orig_line_num, orig_uses_line)) = original_uses_info.get(current_idx) {
+                // Position-based matching: same index in the list
+                if *orig_line_num < result_lines.len() {
+                    // Preserve original indentation by extracting it and combining with new uses content
+                    let updated_line = self.preserve_indentation_with_new_uses_content(
+                        orig_uses_line,
+                        current_uses_line,
+                    );
+                    log::debug!(
+                        "Updating line {} from '{}' to '{}'",
+                        orig_line_num,
+                        orig_uses_line,
+                        updated_line
+                    );
+                    result_lines[*orig_line_num] = updated_line;
+                }
+            } else {
+                log::debug!(
+                    "No position match found for current line {}: {}",
+                    current_line_num,
+                    current_uses_line
+                );
             }
+        }
+
+        Ok(result_lines.join("\n"))
+    }
+
+    fn preserve_indentation_with_new_uses_content(
+        &self,
+        original_line: &str,
+        current_line: &str,
+    ) -> String {
+        // Extract indentation from original line (everything before "uses:")
+        let original_indent = if let Some(uses_pos) = original_line.find("uses:") {
+            &original_line[..uses_pos]
+        } else {
+            // Fallback: extract leading whitespace
+            let trimmed = original_line.trim_start();
+            &original_line[..original_line.len() - trimmed.len()]
         };
-        self.repo.checkout_tree(&obj, None)?;
-        self.repo.set_head(&format!("refs/heads/{}", branch))?;
+
+        // Extract the uses content from current line (everything from "uses:" onwards)
+        let current_uses_content = if let Some(uses_pos) = current_line.find("uses:") {
+            &current_line[uses_pos..]
+        } else {
+            current_line.trim_start() // Fallback to trimmed content
+        };
+
+        // Combine original indentation with new uses content
+        format!("{}{}", original_indent, current_uses_content)
+    }
+
+    fn extract_uses_context(&self, lines: &[&str]) -> Vec<(usize, String)> {
+        let mut uses_lines = Vec::new();
+
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            // Check for both "uses:" and "- uses:" patterns
+            if trimmed.starts_with("uses:") || trimmed.starts_with("- uses:") {
+                uses_lines.push((i, line.to_string()));
+            }
+        }
+
+        uses_lines
+    }
+
+    pub fn get_files_with_uses_changes(&self) -> Result<Vec<String>, String> {
+        // Get diff to see what files have uses: changes
+        let output = Command::new("git")
+            .args(["diff", "--name-only", "HEAD"])
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to get modified files: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Git diff failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let files = String::from_utf8_lossy(&output.stdout);
+        let mut uses_files = Vec::new();
+
+        for file in files.lines() {
+            if file.trim().is_empty() {
+                continue;
+            }
+
+            // Check if this file has uses: changes
+            let diff_output = Command::new("git")
+                .args(["diff", "HEAD", "--", file])
+                .current_dir(&self.working_dir)
+                .output()
+                .map_err(|e| format!("Failed to get diff for {}: {}", file, e))?;
+
+            if diff_output.status.success() {
+                let diff_content = String::from_utf8_lossy(&diff_output.stdout);
+                // Look for lines that have uses: changes (added or removed)
+                if diff_content.lines().any(|line| {
+                    (line.starts_with("+") || line.starts_with("-")) && line.contains("uses:")
+                }) {
+                    log::info!("Found uses: changes in file: {}", file);
+                    uses_files.push(file.to_string());
+                }
+            }
+        }
+
+        Ok(uses_files)
+    }
+
+    pub fn commit_changes(&self, message: &str) -> Result<(), String> {
+        // First check if there are any staged changes
+        let status_output = Command::new("git")
+            .arg("diff")
+            .arg("--cached")
+            .arg("--name-only")
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to check staged changes: {}", e))?;
+
+        if !status_output.status.success() {
+            return Err(format!(
+                "Git diff --cached failed: {}",
+                String::from_utf8_lossy(&status_output.stderr)
+            ));
+        }
+
+        let staged_files = String::from_utf8_lossy(&status_output.stdout);
+        if staged_files.trim().is_empty() {
+            log::info!("No changes staged for commit");
+            return Ok(());
+        }
+
+        // Commit the staged changes
+        let output = Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg(message)
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to execute git commit: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!("Successfully committed changes");
         Ok(())
     }
+
+    pub fn create_branch(&self, branch_name: &str) -> Result<(), String> {
+        let output = Command::new("git")
+            .arg("checkout")
+            .arg("-b")
+            .arg(branch_name)
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to execute git checkout: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Git checkout failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!(
+            "Successfully created and switched to branch: {}",
+            branch_name
+        );
+        Ok(())
+    }
+
+    pub fn checkout_branch(&self, branch_name: &str) -> Result<(), String> {
+        let output = Command::new("git")
+            .arg("checkout")
+            .arg(branch_name)
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to execute git checkout: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Git checkout failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!("Successfully checked out branch: {}", branch_name);
+        Ok(())
+    }
+
+    pub fn push_changes(&self, branch: &str, force: bool) -> Result<(), String> {
+        let mut args = vec!["push", "origin", branch];
+        if force {
+            args.insert(1, "--force");
+        }
+
+        let output = Command::new("git")
+            .args(&args)
+            .current_dir(&self.working_dir)
+            .output()
+            .map_err(|e| format!("Failed to execute git push: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Git push failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!("Successfully pushed changes to branch: {}", branch);
+        Ok(())
+    }
+}
+
+pub fn clone_repository(repo_url: &str, target_path: &str) -> Result<GitRepository, String> {
+    let output = Command::new("git")
+        .arg("clone")
+        .arg(repo_url)
+        .arg(target_path)
+        .output()
+        .map_err(|e| format!("Failed to execute git clone: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Git clone failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    GitRepository::open(target_path.to_string())
 }
