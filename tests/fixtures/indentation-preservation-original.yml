@@ -1,0 +1,38 @@
+name: Indentation Preservation Test
+on: [push]
+
+jobs:
+  test-job:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Parse issue form body
+        id: parse
+        uses: zentered/issue-forms-body-parser@v2.2.0
+        with:
+          body: ${{ steps.read_issue_body.output.body }}
+
+      - name: Get Github Token
+        uses: actions/create-github-app-token@v2.1.1
+        id: token
+        with:
+          app-id: 349757
+          private-key: ${{ secrets.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Download Release Artifact
+        uses: dsaltares/fetch-gh-release-asset@master
+        with:
+          file: "rivendell"
+          target: "rivendell"
+
+      - name: Create Pull Request
+        id: create_pull_request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(onboard): Test commit"

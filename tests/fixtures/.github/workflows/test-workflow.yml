@@ -1,0 +1,37 @@
+name: Test Workflow
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-job:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
+      - name: Some step
+        run: |
+          echo "This is a bash script"
+          echo "with multiple lines"
+
+          echo "and blank lines"
+
+      - name: Parse issue form body
+        id: parse
+        uses: zentered/issue-forms-body-parser@v2.2.0
+        with:
+          body: ${{ steps.read_issue_body.output.body }}
+
+      - name: Another step
+        run: |
+          # Another bash script
+          SCRIPT="some complex script"
+
+          if [ "condition" ]; then
+            echo "do something"
+          fi
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.TOKEN }}
+          title: "Test PR"

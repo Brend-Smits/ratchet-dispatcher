@@ -1,6 +1,5 @@
 use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use git::GitRepository;
 use github::GitHubClient;
 use io::get_pr_body_from_file;
 use log::{error, info};
@@ -96,18 +95,18 @@ async fn process_single_repository(
     github_client: &GitHubClient,
     default_branch: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let git_repo = match GitRepository::clone_repo(repo_url, local_path) {
+    let git_repo = match git::clone_repository(repo_url, local_path) {
         Ok(repo) => repo,
         Err(e) => {
             error!("Failed to clone repository: {}", e);
-            return Err(e);
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
         }
     };
 
     if git_repo.checkout_branch(&args.branch).is_err() {
         if let Err(e) = git_repo.create_branch(&args.branch) {
             error!("Failed to create branch: {}", e);
-            return Err(e);
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
         }
     }
 
@@ -116,15 +115,14 @@ async fn process_single_repository(
         return Err(e);
     }
 
-    // Remove blank line changes from the changes
-    if let Err(e) = git_repo.remove_blank_line_changes() {
-        error!("Failed to remove blank line changes: {}", e);
-        git_repo.stage_changes()?;
+    if let Err(e) = git_repo.stage_changes() {
+        error!("Failed to stage changes: {}", e);
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
     }
 
     if let Err(e) = git_repo.commit_changes("ci: pin versions of workflow actions") {
         error!("Failed to commit changes: {}", e);
-        return Err(e);
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
     }
 
     let force_push = match github_client.find_existing_pr(&args.branch).await {
@@ -138,7 +136,7 @@ async fn process_single_repository(
 
     if let Err(e) = git_repo.push_changes(&args.branch, true) {
         error!("Failed to push changes to branch {}: {}", &args.branch, e);
-        return Err(e);
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
     }
 
     if !force_push {
