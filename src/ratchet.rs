@@ -36,7 +36,7 @@ You can install ratchet using:
     }
 }
 
-pub async fn upgrade_workflows(local_path: &str) -> Result<()> {
+pub async fn upgrade_workflows(local_path: &str, clean_comment: bool) -> Result<()> {
     info!("Upgrading workflows in {}", local_path);
 
     // Check if ratchet is installed and available
@@ -54,14 +54,14 @@ pub async fn upgrade_workflows(local_path: &str) -> Result<()> {
         let path = entry.path();
         if path.is_file() {
             // Instead of returning an error, we continue
-            let _ = upgrade_single_workflow(&path);
+            let _ = upgrade_single_workflow(&path, clean_comment);
         }
     }
 
     Ok(())
 }
 
-pub fn upgrade_single_workflow(path: &Path) -> Result<()> {
+pub fn upgrade_single_workflow(path: &Path, clean_comment: bool) -> Result<()> {
     debug!("Upgrading workflow: {}", path.display());
 
     // Check if file exists and get its content before upgrade
@@ -95,7 +95,7 @@ pub fn upgrade_single_workflow(path: &Path) -> Result<()> {
 
     // Check content after upgrade
     if path.exists() {
-        let content_after = std::fs::read_to_string(path).with_context(|| {
+        let mut content_after = std::fs::read_to_string(path).with_context(|| {
             format!(
                 "Failed to read workflow file after upgrade: {}",
                 path.display()
@@ -105,6 +105,16 @@ pub fn upgrade_single_workflow(path: &Path) -> Result<()> {
             "Content after upgrade (first 200 chars): {}",
             &content_after.chars().take(200).collect::<String>()
         );
+
+        // Clean ratchet comments if requested
+        if clean_comment {
+            debug!("Cleaning ratchet comments in {}", path.display());
+            content_after = clean_ratchet_comments(&content_after);
+            std::fs::write(path, &content_after).with_context(|| {
+                format!("Failed to write cleaned content to {}", path.display())
+            })?;
+            debug!("Successfully cleaned ratchet comments");
+        }
     }
 
     info!(
@@ -129,6 +139,45 @@ fn run_ratchet_command(path: &Path) -> Result<std::process::Output> {
     Ok(output)
 }
 
+fn clean_ratchet_comments(content: &str) -> String {
+    let mut cleaned_lines = Vec::new();
+    
+    for line in content.lines() {
+        if let Some(comment_start) = line.find("# ratchet:") {
+            // Extract the part before the comment
+            let before_comment = &line[..comment_start];
+            
+            // Extract the part after "# ratchet:"
+            let comment_part = &line[comment_start + "# ratchet:".len()..];
+            
+            // Look for the @ symbol and extract the version after it
+            if let Some(at_pos) = comment_part.find('@') {
+                let version_part = &comment_part[at_pos + 1..].trim();
+                
+                // Clean the version part - remove any trailing whitespace or comments
+                let cleaned_version = version_part.split_whitespace().next().unwrap_or("");
+                
+                if !cleaned_version.is_empty() {
+                    // Reconstruct the line with just the version
+                    let cleaned_line = format!("{}# {}", before_comment, cleaned_version);
+                    cleaned_lines.push(cleaned_line);
+                } else {
+                    // If we can't extract a version, keep the original line
+                    cleaned_lines.push(line.to_string());
+                }
+            } else {
+                // No @ symbol found, keep the original line
+                cleaned_lines.push(line.to_string());
+            }
+        } else {
+            // Line doesn't contain ratchet comment, keep as-is
+            cleaned_lines.push(line.to_string());
+        }
+    }
+    
+    cleaned_lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,7 +187,28 @@ mod tests {
         let dir = tempfile::tempdir().expect("Failed to create temp directory");
 
         let result =
-            upgrade_workflows(dir.path().to_str().expect("Invalid temp directory path")).await;
+            upgrade_workflows(
+                dir.path().to_str().expect("Invalid temp directory path"),
+                false // clean_comment = false for test
+            ).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clean_ratchet_comments() {
+        let input = "# ratchet:actions/checkout@v4";
+        let expected = "# v4";
+        assert_eq!(clean_ratchet_comments(input), expected);
+
+        let input_with_dot = "# ratchet:actions/github-script@v7.0.1";
+        let expected_with_dot = "# v7.0.1";
+        assert_eq!(clean_ratchet_comments(input_with_dot), expected_with_dot);
+
+        let regular_comment = "# This is a regular comment";
+        assert_eq!(clean_ratchet_comments(regular_comment), regular_comment);
+
+        let multiple_lines = "name: CI\n# ratchet:actions/checkout@v4\nruns-on: ubuntu-latest\n# ratchet:actions/setup-node@v3";
+        let expected_multiple = "name: CI\n# v4\nruns-on: ubuntu-latest\n# v3";
+        assert_eq!(clean_ratchet_comments(multiple_lines), expected_multiple);
     }
 }

@@ -32,6 +32,11 @@ struct Args {
         help = "Perform a dry run without pushing changes or creating pull requests"
     )]
     dry_run: bool,
+    #[clap(
+        long,
+        help = "Clean ratchet comments to show only semantic version (e.g., '# ratchet:actions/checkout@v4' becomes '# v4')"
+    )]
+    clean_comment: bool,
 }
 
 fn load_env_vars() -> Result<String> {
@@ -130,7 +135,7 @@ async fn process_single_repository(
     }
 
     debug!("Starting workflow upgrades...");
-    upgrade_workflows(local_path).await?;
+    upgrade_workflows(local_path, args.clean_comment).await?;
     debug!("Workflow upgrades completed");
 
     debug!("Staging changes...");
