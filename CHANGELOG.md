@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.3.0...v1.4.0) (2025-09-12)
+
+
+### Features
+
+* add clean_comment option ([ea1cdee](https://github.com/Brend-Smits/ratchet-dispatcher/commit/ea1cdee17a85baf71c668dec4fb0d37a65fc7386))
+
+
+### Bug Fixes
+
+* improve error handling in workflow upgrades and enhance comment cleaning functionality ([2a5ba83](https://github.com/Brend-Smits/ratchet-dispatcher/commit/2a5ba835eaf212e8ef6d0f34b1dda0e94e559bee))
+
 ## [1.3.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.5...v1.3.0) (2025-09-12)
 
 
