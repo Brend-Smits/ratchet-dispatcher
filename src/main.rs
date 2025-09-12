@@ -3,7 +3,7 @@ use clap::Parser;
 use clap_verbosity_flag::Verbosity;
 use github::GitHubClient;
 use io::get_pr_body_from_file;
-use log::{error, info};
+use log::{debug, error, info};
 use ratchet::upgrade_workflows;
 use std::{env, process};
 
@@ -15,6 +15,7 @@ mod io;
 mod ratchet;
 
 #[derive(Parser, Debug, Clone)]
+#[clap(version)]
 struct Args {
     #[clap(long)]
     repos: String,
@@ -26,6 +27,11 @@ struct Args {
     clone_dir: String,
     #[clap(long)]
     pr_body_path: Option<String>,
+    #[clap(
+        long,
+        help = "Perform a dry run without pushing changes or creating pull requests"
+    )]
+    dry_run: bool,
 }
 
 fn load_env_vars() -> Result<String> {
@@ -47,6 +53,15 @@ async fn main() -> Result<()> {
         .format_module_path(false)
         .format_target(false)
         .init();
+
+    // Check if ratchet is available early to fail fast
+    info!("Checking if ratchet tool is available...");
+    ratchet::check_ratchet_availability()?;
+
+    if args.dry_run {
+        info!("🔍 DRY RUN MODE: No changes will be pushed or pull requests created");
+    }
+
     let token = load_env_vars()?;
     let repos: Vec<&str> = args.repos.split(',').collect();
     process_repositories(repos, args.clone(), token).await?;
@@ -85,7 +100,10 @@ async fn process_repositories(repos: Vec<&str>, args: Args, token: String) -> Re
         {
             error!("Failed to process repository {}: {}", repo, e);
         }
-        cleanup_clone_dir(&local_path);
+
+        if !args.dry_run {
+            cleanup_clone_dir(&local_path);
+        }
     }
     Ok(())
 }
@@ -98,17 +116,60 @@ async fn process_single_repository(
     default_branch: &str,
 ) -> Result<()> {
     info!("Processing repository: {}", repo_url);
+    debug!("Local path: {}", local_path);
+    debug!("Branch: {}", args.branch);
+    debug!("Default branch: {}", default_branch);
+
     let git_repo = git::clone_repository(repo_url, local_path)?;
 
     if git_repo.checkout_branch(&args.branch).is_err() {
+        debug!("Branch {} doesn't exist, creating it", args.branch);
         git_repo.create_branch(&args.branch)?;
+    } else {
+        debug!("Successfully checked out existing branch {}", args.branch);
     }
 
+    debug!("Starting workflow upgrades...");
     upgrade_workflows(local_path).await?;
+    debug!("Workflow upgrades completed");
 
+    debug!("Staging changes...");
     git_repo.stage_changes()?;
+    debug!("Staging completed");
 
-    git_repo.commit_changes("ci: pin versions of workflow actions")?;
+    debug!("Committing changes...");
+    let has_changes = if args.dry_run {
+        // In dry-run mode, check if there would be changes without actually committing
+        git_repo.check_staged_changes()?
+    } else {
+        git_repo.commit_changes("ci: pin versions of workflow actions")?
+    };
+
+    if !has_changes {
+        info!(
+            "No changes to commit for repository {}, skipping PR creation",
+            repo_url
+        );
+        return Ok(());
+    }
+
+    debug!("Changes committed successfully");
+
+    if args.dry_run {
+        info!(
+            "🔍 DRY RUN: Would push changes to branch '{}' and create/update PR for repository {}",
+            args.branch, repo_url
+        );
+        info!("🔍 DRY RUN: Changes that would be committed:");
+
+        // Show the diff that would be committed
+        if let Err(e) = git_repo.show_staged_diff() {
+            debug!("Could not show staged diff: {}", e);
+        }
+
+        info!("🔍 DRY RUN: Repository clone preserved at: {}", local_path);
+        return Ok(());
+    }
 
     let force_push = match github_client.find_existing_pr(&args.branch).await {
         Ok(Some(_)) => true,
@@ -132,11 +193,7 @@ async fn process_single_repository(
         {
             Ok(pr) => {
                 if let Some(html_url) = pr.html_url {
-                    info!(
-                        "Created PR for {}: {}",
-                        repo_url,
-                        html_url
-                    );
+                    info!("Created PR for {}: {}", repo_url, html_url);
                 } else {
                     info!("Created PR for {}: (URL not available)", repo_url);
                 }

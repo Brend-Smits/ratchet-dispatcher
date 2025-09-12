@@ -177,6 +177,30 @@ impl GitRepository {
     }
 
     pub fn get_files_with_uses_changes(&self) -> Result<Vec<String>> {
+        // First, let's debug the git state
+        let status_output = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to get git status")?;
+
+        debug!(
+            "Git status output: {}",
+            String::from_utf8_lossy(&status_output.stdout)
+        );
+
+        // Get current HEAD reference
+        let head_output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to get HEAD reference")?;
+
+        debug!(
+            "Current HEAD: {}",
+            String::from_utf8_lossy(&head_output.stdout)
+        );
+
         // Get diff to see what files have uses: changes
         let output = Command::new("git")
             .args(["diff", "--name-only", "HEAD"])
@@ -193,7 +217,7 @@ impl GitRepository {
 
         let files = String::from_utf8_lossy(&output.stdout);
         let mut uses_files = Vec::new();
-        debug!("Files from git diff: {:#?}", files);
+        debug!("Files from git diff --name-only HEAD: {:#?}", files);
 
         for file in files.lines() {
             if file.trim().is_empty() {
@@ -209,12 +233,15 @@ impl GitRepository {
 
             if diff_output.status.success() {
                 let diff_content = String::from_utf8_lossy(&diff_output.stdout);
+                debug!("Diff content for file {}: {}", file, diff_content);
                 // Look for lines that have uses: changes (added or removed)
                 if diff_content.lines().any(|line| {
                     (line.starts_with("+") || line.starts_with("-")) && line.contains("uses:")
                 }) {
                     log::info!("Found uses: changes in file: {}", file);
                     uses_files.push(file.to_string());
+                } else {
+                    debug!("No uses: changes found in file: {}", file);
                 }
             }
         }
@@ -222,7 +249,59 @@ impl GitRepository {
         Ok(uses_files)
     }
 
-    pub fn commit_changes(&self, message: &str) -> Result<()> {
+    pub fn check_staged_changes(&self) -> Result<bool> {
+        // Check if there are any staged changes without committing
+        let status_output = Command::new("git")
+            .arg("diff")
+            .arg("--cached")
+            .arg("--name-only")
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to check staged changes")?;
+
+        if !status_output.status.success() {
+            return Err(anyhow!(
+                "Git diff --cached failed: {}",
+                String::from_utf8_lossy(&status_output.stderr)
+            ));
+        }
+
+        let staged_files = String::from_utf8_lossy(&status_output.stdout);
+        if staged_files.trim().is_empty() {
+            log::info!("No changes staged for commit");
+            Ok(false)
+        } else {
+            log::info!("Found staged changes that would be committed");
+            Ok(true)
+        }
+    }
+
+    pub fn show_staged_diff(&self) -> Result<()> {
+        let output = Command::new("git")
+            .arg("diff")
+            .arg("--cached")
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to get staged diff")?;
+
+        if !output.status.success() {
+            return Err(anyhow!(
+                "Git diff --cached failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let diff = String::from_utf8_lossy(&output.stdout);
+        if !diff.trim().is_empty() {
+            println!("{}", diff);
+        } else {
+            log::info!("No staged changes to display");
+        }
+
+        Ok(())
+    }
+
+    pub fn commit_changes(&self, message: &str) -> Result<bool> {
         // First check if there are any staged changes
         let status_output = Command::new("git")
             .arg("diff")
@@ -242,7 +321,7 @@ impl GitRepository {
         let staged_files = String::from_utf8_lossy(&status_output.stdout);
         if staged_files.trim().is_empty() {
             log::info!("No changes staged for commit");
-            return Ok(());
+            return Ok(false);
         }
 
         // Commit the staged changes
@@ -262,7 +341,7 @@ impl GitRepository {
         }
 
         log::info!("Successfully committed changes");
-        Ok(())
+        Ok(true)
     }
 
     pub fn create_branch(&self, branch_name: &str) -> Result<()> {
