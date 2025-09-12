@@ -1,3 +1,4 @@
+use anyhow::Result;
 use octocrab::{models::pulls::PullRequest, Octocrab};
 
 pub struct GitHubClient {
@@ -7,13 +8,13 @@ pub struct GitHubClient {
 }
 
 impl GitHubClient {
-    pub fn new(owner: String, repo: String, token: String) -> Self {
-        let octocrab = Octocrab::builder().personal_token(token).build().unwrap();
-        GitHubClient {
+    pub fn new(owner: String, repo: String, token: String) -> Result<Self> {
+        let octocrab = Octocrab::builder().personal_token(token).build()?;
+        Ok(GitHubClient {
             octocrab,
             owner,
             repo,
-        }
+        })
     }
 
     // Make a request to the GitHub API to create a pull request
@@ -24,7 +25,7 @@ impl GitHubClient {
         branch: &str,
         default_branch: String,
         pr_body: String,
-    ) -> Result<PullRequest, Box<dyn std::error::Error>> {
+    ) -> Result<PullRequest> {
         let pr = self
             .octocrab
             .pulls(&self.owner, &self.repo)
@@ -42,7 +43,7 @@ impl GitHubClient {
     pub async fn find_existing_pr(
         &self,
         branch: &str,
-    ) -> Result<Option<PullRequest>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<PullRequest>> {
         let pulls = self
             .octocrab
             .pulls(&self.owner, &self.repo)
@@ -57,7 +58,7 @@ impl GitHubClient {
 
     // Make a request to the GitHub API to get the default branch of the repository
     // Return the default branch
-    pub async fn get_default_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn get_default_branch(&self) -> Result<String> {
         let repo = self.octocrab.repos(&self.owner, &self.repo).get().await?;
         Ok(repo.default_branch.unwrap_or_else(|| "main".to_string()))
     }
