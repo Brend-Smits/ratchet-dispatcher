@@ -1,5 +1,5 @@
 # Stage 1: Build Ratchet from the latest tag
-FROM golang:1.22 AS ratchet-builder
+FROM golang:1.24 AS ratchet-builder
 WORKDIR /go/src/github.com/sethvargo/ratchet
 RUN apt-get update && apt-get install -y git && apt clean
 
