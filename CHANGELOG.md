@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.4...v1.2.5) (2025-09-12)
+
+
+### Bug Fixes
+
+* update Dockerfile and release workflow for improved compatibility ([ed3a2a5](https://github.com/Brend-Smits/ratchet-dispatcher/commit/ed3a2a56dc211cffff5baee52f72314dd51b20c1))
+
 ## [1.2.4](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.3...v1.2.4) (2025-09-12)
 
 
