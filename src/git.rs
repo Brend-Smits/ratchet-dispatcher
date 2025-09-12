@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use std::process::Command;
 
 pub struct GitRepository {
@@ -5,11 +6,11 @@ pub struct GitRepository {
 }
 
 impl GitRepository {
-    pub fn open(working_dir: String) -> Result<Self, String> {
+    pub fn open(working_dir: String) -> Result<Self> {
         Ok(GitRepository { working_dir })
     }
 
-    pub fn stage_changes(&self) -> Result<(), String> {
+    pub fn stage_changes(&self) -> Result<()> {
         // Get list of modified files with 'uses:' changes
         let modified_files = self.get_files_with_uses_changes()?;
 
@@ -28,7 +29,7 @@ impl GitRepository {
         Ok(())
     }
 
-    fn stage_uses_lines_only(&self, file: &str) -> Result<(), String> {
+    fn stage_uses_lines_only(&self, file: &str) -> Result<()> {
         // Much simpler approach: create a temporary branch and cherry-pick only uses: changes
 
         // First, create a copy of the original file content from HEAD
@@ -36,10 +37,10 @@ impl GitRepository {
             .args(["show", &format!("HEAD:{}", file)])
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to get original file {}: {}", file, e))?;
+            .with_context(|| format!("Failed to get original file {}", file))?;
 
         if !original_output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git show failed for {}: {}",
                 file,
                 String::from_utf8_lossy(&original_output.stderr)
@@ -51,7 +52,7 @@ impl GitRepository {
         // Get current file content
         let current_path = std::path::Path::new(&self.working_dir).join(file);
         let current_content = std::fs::read_to_string(&current_path)
-            .map_err(|e| format!("Failed to read current file {}: {}", file, e))?;
+            .with_context(|| format!("Failed to read current file {}", file))?;
 
         // Create a new version with only uses: line changes
         let uses_only_content =
@@ -59,20 +60,20 @@ impl GitRepository {
 
         // Temporarily overwrite the file with the uses-only version
         std::fs::write(&current_path, &uses_only_content)
-            .map_err(|e| format!("Failed to write uses-only content: {}", e))?;
+            .context("Failed to write uses-only content")?;
 
         // Stage the file
         let stage_output = Command::new("git")
             .args(["add", file])
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to stage file: {}", e))?;
+            .context("Failed to stage file")?;
 
         if !stage_output.status.success() {
             // Restore original content before returning error
             std::fs::write(&current_path, current_content)
-                .map_err(|e| format!("Failed to restore file after staging error: {}", e))?;
-            return Err(format!(
+                .context("Failed to restore file after staging error")?;
+            return Err(anyhow!(
                 "Failed to stage file {}: {}",
                 file,
                 String::from_utf8_lossy(&stage_output.stderr)
@@ -81,13 +82,13 @@ impl GitRepository {
 
         // Restore the original current content to working directory
         std::fs::write(&current_path, current_content)
-            .map_err(|e| format!("Failed to restore current file content: {}", e))?;
+            .context("Failed to restore current file content")?;
 
         log::info!("Staged uses: changes for file: {}", file);
         Ok(())
     }
 
-    fn create_uses_only_version(&self, original: &str, current: &str) -> Result<String, String> {
+    fn create_uses_only_version(&self, original: &str, current: &str) -> Result<String> {
         // Parse both versions to understand YAML structure
         let original_lines: Vec<&str> = original.lines().collect();
         let current_lines: Vec<&str> = current.lines().collect();
@@ -173,16 +174,16 @@ impl GitRepository {
         uses_lines
     }
 
-    pub fn get_files_with_uses_changes(&self) -> Result<Vec<String>, String> {
+    pub fn get_files_with_uses_changes(&self) -> Result<Vec<String>> {
         // Get diff to see what files have uses: changes
         let output = Command::new("git")
             .args(["diff", "--name-only", "HEAD"])
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to get modified files: {}", e))?;
+            .context("Failed to get modified files")?;
 
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git diff failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -201,7 +202,7 @@ impl GitRepository {
                 .args(["diff", "HEAD", "--", file])
                 .current_dir(&self.working_dir)
                 .output()
-                .map_err(|e| format!("Failed to get diff for {}: {}", file, e))?;
+                .with_context(|| format!("Failed to get diff for {}", file))?;
 
             if diff_output.status.success() {
                 let diff_content = String::from_utf8_lossy(&diff_output.stdout);
@@ -218,7 +219,7 @@ impl GitRepository {
         Ok(uses_files)
     }
 
-    pub fn commit_changes(&self, message: &str) -> Result<(), String> {
+    pub fn commit_changes(&self, message: &str) -> Result<()> {
         // First check if there are any staged changes
         let status_output = Command::new("git")
             .arg("diff")
@@ -226,10 +227,10 @@ impl GitRepository {
             .arg("--name-only")
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to check staged changes: {}", e))?;
+            .context("Failed to check staged changes")?;
 
         if !status_output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git diff --cached failed: {}",
                 String::from_utf8_lossy(&status_output.stderr)
             ));
@@ -248,10 +249,10 @@ impl GitRepository {
             .arg(message)
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to execute git commit: {}", e))?;
+            .context("Failed to execute git commit")?;
 
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git commit failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -261,17 +262,17 @@ impl GitRepository {
         Ok(())
     }
 
-    pub fn create_branch(&self, branch_name: &str) -> Result<(), String> {
+    pub fn create_branch(&self, branch_name: &str) -> Result<()> {
         let output = Command::new("git")
             .arg("checkout")
             .arg("-b")
             .arg(branch_name)
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to execute git checkout: {}", e))?;
+            .context("Failed to execute git checkout")?;
 
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git checkout failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -284,16 +285,16 @@ impl GitRepository {
         Ok(())
     }
 
-    pub fn checkout_branch(&self, branch_name: &str) -> Result<(), String> {
+    pub fn checkout_branch(&self, branch_name: &str) -> Result<()> {
         let output = Command::new("git")
             .arg("checkout")
             .arg(branch_name)
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to execute git checkout: {}", e))?;
+            .context("Failed to execute git checkout")?;
 
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git checkout failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -303,7 +304,7 @@ impl GitRepository {
         Ok(())
     }
 
-    pub fn push_changes(&self, branch: &str, force: bool) -> Result<(), String> {
+    pub fn push_changes(&self, branch: &str, force: bool) -> Result<()> {
         let mut args = vec!["push", "origin", branch];
         if force {
             args.insert(1, "--force");
@@ -313,10 +314,10 @@ impl GitRepository {
             .args(&args)
             .current_dir(&self.working_dir)
             .output()
-            .map_err(|e| format!("Failed to execute git push: {}", e))?;
+            .context("Failed to execute git push")?;
 
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow!(
                 "Git push failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -327,16 +328,16 @@ impl GitRepository {
     }
 }
 
-pub fn clone_repository(repo_url: &str, target_path: &str) -> Result<GitRepository, String> {
+pub fn clone_repository(repo_url: &str, target_path: &str) -> Result<GitRepository> {
     let output = Command::new("git")
         .arg("clone")
         .arg(repo_url)
         .arg(target_path)
         .output()
-        .map_err(|e| format!("Failed to execute git clone: {}", e))?;
+        .with_context(|| format!("Failed to execute git clone for {}", repo_url))?;
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(anyhow!(
             "Git clone failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));

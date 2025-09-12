@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::fs;
 
 use log::{debug, error};
@@ -13,15 +14,15 @@ pub fn cleanup_clone_dir(local_path: &str) {
 
 // If the user has a custom PR body, we should read the file and use that as the PR body
 // Otherwise, we should use a default PR body
-pub fn get_pr_body_from_file(pr_body_path: &Option<String>) -> String {
+pub fn get_pr_body_from_file(pr_body_path: &Option<String>) -> Result<String> {
     match pr_body_path {
         Some(path) => {
-            fs::read_to_string(path).unwrap()
+            Ok(fs::read_to_string(path)?)
         }
         None => {
-            String::from(
+            Ok(String::from(
                 "This automatically generated pull request upgrades the workflows using ratchet. It pins the versions of the actions used in the workflows to prevent bad actors from overwriting tags/versions. Please review the changes and merge if everything looks good.",
-            )
+            ))
         }
     }
 }
