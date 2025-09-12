@@ -53,8 +53,10 @@ pub async fn upgrade_workflows(local_path: &str, clean_comment: bool) -> Result<
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
-            // Instead of returning an error, we continue
-            let _ = upgrade_single_workflow(&path, clean_comment);
+            if let Err(e) = upgrade_single_workflow(&path, clean_comment) {
+                error!("Failed to upgrade workflow {}: {}", path.display(), e);
+                // Continue with other files instead of failing completely
+            }
         }
     }
 
@@ -139,27 +141,33 @@ fn run_ratchet_command(path: &Path) -> Result<std::process::Output> {
     Ok(output)
 }
 
-fn clean_ratchet_comments(content: &str) -> String {
+pub fn clean_ratchet_comments(content: &str) -> String {
     let mut cleaned_lines = Vec::new();
-    
+
     for line in content.lines() {
         if let Some(comment_start) = line.find("# ratchet:") {
             // Extract the part before the comment
             let before_comment = &line[..comment_start];
-            
+
             // Extract the part after "# ratchet:"
             let comment_part = &line[comment_start + "# ratchet:".len()..];
-            
+
             // Look for the @ symbol and extract the version after it
             if let Some(at_pos) = comment_part.find('@') {
                 let version_part = &comment_part[at_pos + 1..].trim();
-                
+
                 // Clean the version part - remove any trailing whitespace or comments
                 let cleaned_version = version_part.split_whitespace().next().unwrap_or("");
-                
+
                 if !cleaned_version.is_empty() {
                     // Reconstruct the line with just the version
-                    let cleaned_line = format!("{}# {}", before_comment, cleaned_version);
+                    let version_prefix = if cleaned_version.starts_with('v') {
+                        ""
+                    } else {
+                        "v"
+                    };
+                    let cleaned_line =
+                        format!("{}# {}{}", before_comment, version_prefix, cleaned_version);
                     cleaned_lines.push(cleaned_line);
                 } else {
                     // If we can't extract a version, keep the original line
@@ -174,8 +182,15 @@ fn clean_ratchet_comments(content: &str) -> String {
             cleaned_lines.push(line.to_string());
         }
     }
-    
-    cleaned_lines.join("\n")
+
+    let mut result = cleaned_lines.join("\n");
+
+    // Preserve the original trailing newline if it existed
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -186,11 +201,11 @@ mod tests {
     async fn test_upgrade_workflows_missing_directory() {
         let dir = tempfile::tempdir().expect("Failed to create temp directory");
 
-        let result =
-            upgrade_workflows(
-                dir.path().to_str().expect("Invalid temp directory path"),
-                false // clean_comment = false for test
-            ).await;
+        let result = upgrade_workflows(
+            dir.path().to_str().expect("Invalid temp directory path"),
+            false, // clean_comment = false for test
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -210,5 +225,20 @@ mod tests {
         let multiple_lines = "name: CI\n# ratchet:actions/checkout@v4\nruns-on: ubuntu-latest\n# ratchet:actions/setup-node@v3";
         let expected_multiple = "name: CI\n# v4\nruns-on: ubuntu-latest\n# v3";
         assert_eq!(clean_ratchet_comments(multiple_lines), expected_multiple);
+
+        // Test newline preservation
+        let input_with_newline = "# ratchet:actions/checkout@v4\n";
+        let expected_with_newline = "# v4\n";
+        assert_eq!(
+            clean_ratchet_comments(input_with_newline),
+            expected_with_newline
+        );
+
+        let input_without_newline = "# ratchet:actions/checkout@v4";
+        let expected_without_newline = "# v4";
+        assert_eq!(
+            clean_ratchet_comments(input_without_newline),
+            expected_without_newline
+        );
     }
 }
