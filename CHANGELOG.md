@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.5...v1.3.0) (2025-09-12)
+
+
+### Features
+
+* enhance Git and GitHub integration with improved logging and dry-run functionality ([244ebf4](https://github.com/Brend-Smits/ratchet-dispatcher/commit/244ebf416a2fc0745e1b0871e9f82c07f4f0e455))
+
+
+### Bug Fixes
+
+* add debug logging for modified files in GitRepository and info logging for repository processing ([b0539b1](https://github.com/Brend-Smits/ratchet-dispatcher/commit/b0539b12f94e4f8d6960377e5d1e979814680b98))
+* correct artifact name for SBOM action in release workflow ([1e8ad4f](https://github.com/Brend-Smits/ratchet-dispatcher/commit/1e8ad4fe1379201b3de0530a36bc5b4200c79447))
+* update Rust container version to 1.85 in CI workflow ([43f303b](https://github.com/Brend-Smits/ratchet-dispatcher/commit/43f303b07c103db92f785a1e20a5481429225c2e))
+
 ## [1.2.5](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.4...v1.2.5) (2025-09-12)
 
 
