@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use log::debug;
 use std::process::Command;
 
 pub struct GitRepository {
@@ -13,6 +14,7 @@ impl GitRepository {
     pub fn stage_changes(&self) -> Result<()> {
         // Get list of modified files with 'uses:' changes
         let modified_files = self.get_files_with_uses_changes()?;
+        debug!("Modified files are: {:?}", modified_files);
 
         if modified_files.is_empty() {
             log::info!("No files with uses: changes found");
@@ -191,6 +193,7 @@ impl GitRepository {
 
         let files = String::from_utf8_lossy(&output.stdout);
         let mut uses_files = Vec::new();
+        debug!("Files from git diff: {:#?}", files);
 
         for file in files.lines() {
             if file.trim().is_empty() {

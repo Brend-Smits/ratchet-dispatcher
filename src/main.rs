@@ -97,6 +97,7 @@ async fn process_single_repository(
     github_client: &GitHubClient,
     default_branch: &str,
 ) -> Result<()> {
+    info!("Processing repository: {}", repo_url);
     let git_repo = git::clone_repository(repo_url, local_path)?;
 
     if git_repo.checkout_branch(&args.branch).is_err() {
