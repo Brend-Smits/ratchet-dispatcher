@@ -158,8 +158,8 @@ index abcd123..efgh456 100644
            with:
 "#;
 
-        let uses_lines = extract_uses_lines_from_diff(diff_content)
-            .expect("Failed to extract uses lines");
+        let uses_lines =
+            extract_uses_lines_from_diff(diff_content).expect("Failed to extract uses lines");
 
         // Should extract all lines that contain 'uses:' (both removals and additions)
         assert_eq!(uses_lines.len(), 4); // 2 removals + 2 additions
