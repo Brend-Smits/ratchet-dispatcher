@@ -14,21 +14,21 @@ name = "ratchet_dispatcher"
 path = "src/lib.rs"
 
 [dependencies]
-clap = { version = "4.5.4", features = ["derive", "env"] }
-clap-verbosity-flag = "2.2.0"
+clap = { version = "4.5.47", features = ["derive", "env"] }
+clap-verbosity-flag = "3.0.4"
 dotenv = { version = "0.15.0", features = ["clap"] }
-log = "0.4.21"
-env_logger = "0.11.3"
+log = "0.4.28"
+env_logger = "0.11.8"
 
-octocrab = "0.38.0"
-tokio = { version = "1.37.0", features = ["full"] }
-anyhow = "1.0.97"
+octocrab = "0.44.1"
+tokio = { version = "1.47.1", features = ["full"] }
+anyhow = "1.0.99"
 
 
 [dev-dependencies]
-tempfile = "3.3.0"
-assert_cmd = "2.0.8"
-mockall = "0.11.1"
+tempfile = "3.22.0"
+assert_cmd = "2.0.17"
+mockall = "0.13.1"
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
