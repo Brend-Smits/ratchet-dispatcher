@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.3...v1.2.4) (2025-09-12)
+
+
+### Bug Fixes
+
+* simplify error handling and improve result types across multiple modules ([beb9aba](https://github.com/Brend-Smits/ratchet-dispatcher/commit/beb9aba5851b489752c4985535498ae569744970))
+
 ## [1.2.3](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.2.2...v1.2.3) (2024-06-29)
 
 
