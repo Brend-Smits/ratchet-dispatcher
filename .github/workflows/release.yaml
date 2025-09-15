@@ -55,7 +55,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # ratchet:actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # ratchet:actions/attest-build-provenance@v1
         id: attest
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
@@ -85,7 +85,7 @@ jobs:
           asset_name: ratchet-dispatcher
       - name: Attest build provenance
         id: attest
-        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # ratchet:actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # ratchet:actions/attest-build-provenance@v1
         with:
           subject-path: 'target/release/ratchet-dispatcher'
       - name: Upload provenance to release
