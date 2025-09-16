@@ -142,7 +142,7 @@ async fn process_single_repository(
         git_repo.create_branch(&args.branch)?;
     } else {
         debug!("Successfully checked out existing branch {}", args.branch);
-        
+
         // If overwrite is enabled, reset the branch to the base branch
         if args.overwrite {
             debug!("Overwrite mode enabled, resetting branch to base");

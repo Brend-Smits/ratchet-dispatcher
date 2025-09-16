@@ -27,7 +27,7 @@ fn setup_test_repo_with_commits() -> (tempfile::TempDir, String) {
     // Create a workflow file and commit it to main
     let workflow_dir = std::path::Path::new(&repo_path).join(".github/workflows");
     std::fs::create_dir_all(&workflow_dir).expect("Failed to create workflow dir");
-    
+
     let workflow_path = workflow_dir.join("test.yml");
     let initial_content = "name: Test\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n";
     std::fs::write(&workflow_path, initial_content).expect("Failed to write workflow file");
@@ -95,12 +95,15 @@ mod tests {
             .output()
             .expect("Failed to count commits ahead");
         let commits_ahead = String::from_utf8_lossy(&ahead_output.stdout);
-        println!("Commits ahead of main before reset: {}", commits_ahead.trim());
+        println!(
+            "Commits ahead of main before reset: {}",
+            commits_ahead.trim()
+        );
         assert!(commits_ahead.trim().parse::<i32>().unwrap() > 0);
 
         // Test reset_branch_to_base function
         let git_repo = GitRepository::open(repo_path.clone()).expect("Failed to open repo");
-        
+
         // Set up remote origin (simulating a remote repo)
         std::process::Command::new("git")
             .args(["remote", "add", "origin", &repo_path])
@@ -156,13 +159,17 @@ mod tests {
             .output()
             .expect("Failed to count commits ahead");
         let commits_ahead = String::from_utf8_lossy(&ahead_output.stdout);
-        println!("Commits ahead of main after reset: {}", commits_ahead.trim());
+        println!(
+            "Commits ahead of main after reset: {}",
+            commits_ahead.trim()
+        );
         assert_eq!(commits_ahead.trim(), "0");
 
         // Check that the working directory has the original content from main
         let workflow_path = std::path::Path::new(&repo_path).join(".github/workflows/test.yml");
-        let current_content = std::fs::read_to_string(&workflow_path).expect("Failed to read workflow file");
-        
+        let current_content =
+            std::fs::read_to_string(&workflow_path).expect("Failed to read workflow file");
+
         // Should have the original content from main (v3, no extra changes)
         assert!(current_content.contains("actions/checkout@v3"));
         assert!(!current_content.contains("Some change"));
