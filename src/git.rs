@@ -62,7 +62,10 @@ impl GitRepository {
 
         // If preserve_newline is enabled, check if only newlines would change
         if preserve_newline && self.only_newline_difference(&original_content, &uses_only_content) {
-            log::info!("Skipping file {} as only newline differences detected", file);
+            log::info!(
+                "Skipping file {} as only newline differences detected",
+                file
+            );
             return Ok(());
         }
 
@@ -96,7 +99,12 @@ impl GitRepository {
         Ok(())
     }
 
-    fn create_uses_only_version(&self, original: &str, current: &str, preserve_newline: bool) -> Result<String> {
+    fn create_uses_only_version(
+        &self,
+        original: &str,
+        current: &str,
+        preserve_newline: bool,
+    ) -> Result<String> {
         // Parse both versions to understand YAML structure
         let original_lines: Vec<&str> = original.lines().collect();
         let current_lines: Vec<&str> = current.lines().collect();
@@ -193,7 +201,7 @@ impl GitRepository {
         // Remove trailing newlines from both and compare
         let original_trimmed = original.trim_end_matches('\n');
         let modified_trimmed = modified.trim_end_matches('\n');
-        
+
         // If the trimmed versions are identical, then only newlines differ
         original_trimmed == modified_trimmed
     }

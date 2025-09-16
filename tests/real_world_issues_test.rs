@@ -254,7 +254,9 @@ jobs:
 
     // Test our surgical staging
     let git_repo = GitRepository::open(repo_path.to_string()).expect("Failed to open repo");
-    git_repo.stage_changes(false).expect("Failed to stage changes");
+    git_repo
+        .stage_changes(false)
+        .expect("Failed to stage changes");
 
     // Check what was staged - should be only uses: changes
     let staged_diff = std::process::Command::new("git")

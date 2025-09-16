@@ -302,7 +302,9 @@ jobs:
 
         // Test staging only uses changes
         let git_repo = GitRepository::open(repo_path).expect("Failed to open repo");
-        git_repo.stage_changes(false).expect("Failed to stage changes");
+        git_repo
+            .stage_changes(false)
+            .expect("Failed to stage changes");
 
         // Check what's staged vs what's unstaged
         let staged_diff = std::process::Command::new("git")
