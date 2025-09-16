@@ -416,6 +416,39 @@ impl GitRepository {
         Ok(())
     }
 
+    pub fn reset_branch_to_base(&self, base_branch: &str) -> Result<()> {
+        // First fetch the latest base branch
+        let fetch_output = Command::new("git")
+            .args(["fetch", "origin", base_branch])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to fetch base branch")?;
+
+        if !fetch_output.status.success() {
+            return Err(anyhow!(
+                "Git fetch failed: {}",
+                String::from_utf8_lossy(&fetch_output.stderr)
+            ));
+        }
+
+        // Reset the current branch to the base branch
+        let reset_output = Command::new("git")
+            .args(["reset", "--hard", &format!("origin/{}", base_branch)])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to reset branch")?;
+
+        if !reset_output.status.success() {
+            return Err(anyhow!(
+                "Git reset failed: {}",
+                String::from_utf8_lossy(&reset_output.stderr)
+            ));
+        }
+
+        log::info!("Successfully reset branch to {}", base_branch);
+        Ok(())
+    }
+
     pub fn push_changes(&self, branch: &str, force: bool) -> Result<()> {
         let mut args = vec!["push", "origin", branch];
         if force {

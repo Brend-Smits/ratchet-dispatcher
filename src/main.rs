@@ -42,6 +42,11 @@ struct Args {
         help = "Preserve trailing newlines at the end of files and don't stage changes that only modify newlines"
     )]
     preserve_newline: bool,
+    #[clap(
+        long,
+        help = "Reset the branch to base and start fresh, resulting in a single commit"
+    )]
+    overwrite: bool,
 }
 
 fn load_env_vars() -> Result<String> {
@@ -137,6 +142,12 @@ async fn process_single_repository(
         git_repo.create_branch(&args.branch)?;
     } else {
         debug!("Successfully checked out existing branch {}", args.branch);
+        
+        // If overwrite is enabled, reset the branch to the base branch
+        if args.overwrite {
+            debug!("Overwrite mode enabled, resetting branch to base");
+            git_repo.reset_branch_to_base(default_branch)?;
+        }
     }
 
     debug!("Starting workflow upgrades...");
