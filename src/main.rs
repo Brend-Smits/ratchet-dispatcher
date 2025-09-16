@@ -37,6 +37,11 @@ struct Args {
         help = "Clean ratchet comments to show only semantic version (e.g., '# ratchet:actions/checkout@v4' becomes '# v4')"
     )]
     clean_comment: bool,
+    #[clap(
+        long,
+        help = "Preserve trailing newlines at the end of files and don't stage changes that only modify newlines"
+    )]
+    preserve_newline: bool,
 }
 
 fn load_env_vars() -> Result<String> {
@@ -139,7 +144,7 @@ async fn process_single_repository(
     debug!("Workflow upgrades completed");
 
     debug!("Staging changes...");
-    git_repo.stage_changes()?;
+    git_repo.stage_changes(args.preserve_newline)?;
     debug!("Staging completed");
 
     debug!("Committing changes...");
