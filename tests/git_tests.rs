@@ -264,7 +264,7 @@ jobs:
         let full_diff_content = String::from_utf8_lossy(&full_diff.stdout);
         println!("Full diff before staging:\n{}", full_diff_content);
         
-        git_repo.stage_changes().expect("Failed to stage changes");
+        git_repo.stage_changes(false).expect("Failed to stage changes");
         
         // Check what's staged vs what's unstaged
         let staged_diff = std::process::Command::new("git")
@@ -302,7 +302,9 @@ jobs:
 
         // Test staging only uses changes
         let git_repo = GitRepository::open(repo_path).expect("Failed to open repo");
-        git_repo.stage_changes().expect("Failed to stage changes");
+        git_repo
+            .stage_changes(false)
+            .expect("Failed to stage changes");
 
         // Check what's staged vs what's unstaged
         let staged_diff = std::process::Command::new("git")
@@ -388,7 +390,7 @@ jobs:
         std::fs::write(&workflow_path, &expected_content).unwrap();
 
         let git_repo = GitRepository::open(repo_path.clone()).unwrap();
-        let result = git_repo.stage_changes();
+        let result = git_repo.stage_changes(false);
 
         assert!(
             result.is_ok(),
@@ -480,7 +482,7 @@ jobs:
         std::fs::write(&workflow_path, &expected_content).unwrap();
 
         let git_repo = GitRepository::open(repo_path.clone()).unwrap();
-        let result = git_repo.stage_changes();
+        let result = git_repo.stage_changes(false);
 
         assert!(
             result.is_ok(),

@@ -11,7 +11,7 @@ impl GitRepository {
         Ok(GitRepository { working_dir })
     }
 
-    pub fn stage_changes(&self) -> Result<()> {
+    pub fn stage_changes(&self, preserve_newline: bool) -> Result<()> {
         // Get list of modified files with 'uses:' changes
         let modified_files = self.get_files_with_uses_changes()?;
         debug!("Modified files are: {:?}", modified_files);
@@ -25,13 +25,13 @@ impl GitRepository {
 
         // Stage only the uses: lines from each file
         for file in modified_files {
-            self.stage_uses_lines_only(&file)?;
+            self.stage_uses_lines_only(&file, preserve_newline)?;
         }
 
         Ok(())
     }
 
-    fn stage_uses_lines_only(&self, file: &str) -> Result<()> {
+    fn stage_uses_lines_only(&self, file: &str, preserve_newline: bool) -> Result<()> {
         // Much simpler approach: create a temporary branch and cherry-pick only uses: changes
 
         // First, create a copy of the original file content from HEAD
@@ -58,7 +58,16 @@ impl GitRepository {
 
         // Create a new version with only uses: line changes
         let uses_only_content =
-            self.create_uses_only_version(&original_content, &current_content)?;
+            self.create_uses_only_version(&original_content, &current_content, preserve_newline)?;
+
+        // If preserve_newline is enabled, check if only newlines would change
+        if preserve_newline && self.only_newline_difference(&original_content, &uses_only_content) {
+            log::info!(
+                "Skipping file {} as only newline differences detected",
+                file
+            );
+            return Ok(());
+        }
 
         // Temporarily overwrite the file with the uses-only version
         std::fs::write(&current_path, &uses_only_content)
@@ -90,7 +99,12 @@ impl GitRepository {
         Ok(())
     }
 
-    fn create_uses_only_version(&self, original: &str, current: &str) -> Result<String> {
+    fn create_uses_only_version(
+        &self,
+        original: &str,
+        current: &str,
+        preserve_newline: bool,
+    ) -> Result<String> {
         // Parse both versions to understand YAML structure
         let original_lines: Vec<&str> = original.lines().collect();
         let current_lines: Vec<&str> = current.lines().collect();
@@ -134,7 +148,14 @@ impl GitRepository {
             }
         }
 
-        Ok(result_lines.join("\n"))
+        let mut result = result_lines.join("\n");
+
+        // Preserve the original trailing newline if it existed and preserve_newline is enabled
+        if preserve_newline && original.ends_with('\n') {
+            result.push('\n');
+        }
+
+        Ok(result)
     }
 
     fn preserve_indentation_with_new_uses_content(
@@ -174,6 +195,15 @@ impl GitRepository {
         }
 
         uses_lines
+    }
+
+    fn only_newline_difference(&self, original: &str, modified: &str) -> bool {
+        // Remove trailing newlines from both and compare
+        let original_trimmed = original.trim_end_matches('\n');
+        let modified_trimmed = modified.trim_end_matches('\n');
+
+        // If the trimmed versions are identical, then only newlines differ
+        original_trimmed == modified_trimmed
     }
 
     pub fn get_files_with_uses_changes(&self) -> Result<Vec<String>> {
@@ -383,6 +413,39 @@ impl GitRepository {
         }
 
         log::info!("Successfully checked out branch: {}", branch_name);
+        Ok(())
+    }
+
+    pub fn reset_branch_to_base(&self, base_branch: &str) -> Result<()> {
+        // First fetch the latest base branch
+        let fetch_output = Command::new("git")
+            .args(["fetch", "origin", base_branch])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to fetch base branch")?;
+
+        if !fetch_output.status.success() {
+            return Err(anyhow!(
+                "Git fetch failed: {}",
+                String::from_utf8_lossy(&fetch_output.stderr)
+            ));
+        }
+
+        // Reset the current branch to the base branch
+        let reset_output = Command::new("git")
+            .args(["reset", "--hard", &format!("origin/{}", base_branch)])
+            .current_dir(&self.working_dir)
+            .output()
+            .context("Failed to reset branch")?;
+
+        if !reset_output.status.success() {
+            return Err(anyhow!(
+                "Git reset failed: {}",
+                String::from_utf8_lossy(&reset_output.stderr)
+            ));
+        }
+
+        log::info!("Successfully reset branch to {}", base_branch);
         Ok(())
     }
 
