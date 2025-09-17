@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.5.0...v1.6.0) (2025-09-17)
+
+
+### Features
+
+* enhance clone_repository with shallow clone and filtering options ([1f17792](https://github.com/Brend-Smits/ratchet-dispatcher/commit/1f17792e9603fd1231061905a7e6aa5bb500bb28))
+
 ## [1.5.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.4.0...v1.5.0) (2025-09-17)
 
 
