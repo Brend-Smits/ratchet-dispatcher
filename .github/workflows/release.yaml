@@ -76,7 +76,7 @@ jobs:
       - name: Build release
         run: cargo build --release --locked
       - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@04733e069f2d7f7f0b4aebc4fbdbce8613b03ccd # v2.9.0
+        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/ratchet-dispatcher
@@ -89,7 +89,7 @@ jobs:
         with:
           subject-path: 'target/release/ratchet-dispatcher'
       - name: Upload provenance to release
-        uses: svenstaro/upload-release-action@04733e069f2d7f7f0b4aebc4fbdbce8613b03ccd # v2.9.0
+        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ steps.attest.outputs.bundle-path }}
