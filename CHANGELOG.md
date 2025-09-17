@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.4.0...v1.5.0) (2025-09-17)
+
+
+### Miscellaneous Chores
+
+* release v1.5.0 ([9d6dbf8](https://github.com/Brend-Smits/ratchet-dispatcher/commit/9d6dbf89102027f5aaeb5b1bf8107566a111a30b))
+
 ## [1.4.0](https://github.com/Brend-Smits/ratchet-dispatcher/compare/v1.3.0...v1.4.0) (2025-09-12)
 
 
