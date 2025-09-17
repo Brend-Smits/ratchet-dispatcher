@@ -476,6 +476,10 @@ impl GitRepository {
 pub fn clone_repository(repo_url: &str, target_path: &str) -> Result<GitRepository> {
     let output = Command::new("git")
         .arg("clone")
+        .arg("--depth")
+        .arg("1")
+        .arg("--no-tags")
+        .arg("--filter=blob:none")
         .arg(repo_url)
         .arg(target_path)
         .output()

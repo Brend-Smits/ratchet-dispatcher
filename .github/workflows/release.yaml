@@ -96,11 +96,3 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           asset_name: provenance.json
-      - uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.15.11
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish SBOM assets
-        uses: anchore/sbom-action/publish-sbom@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.15.11
-        with:
-          sbom-artifact-match: ".*\\.spdx\\.json$"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
