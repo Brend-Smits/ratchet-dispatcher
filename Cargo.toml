@@ -14,7 +14,7 @@ name = "ratchet_dispatcher"
 path = "src/lib.rs"
 
 [dependencies]
-clap = { version = "4.5.47", features = ["derive", "env"] }
+clap = { version = "4.5.48", features = ["derive", "env"] }
 clap-verbosity-flag = "3.0.4"
 dotenv = { version = "0.15.0", features = ["clap"] }
 log = "0.4.28"
